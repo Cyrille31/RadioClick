@@ -12,6 +12,7 @@ import androidx.media3.common.MediaMetadata
 import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.net.Http
+import com.cgexcel.radioclic.net.AdFree
 import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.toUserMessage
 import kotlinx.coroutines.async
@@ -37,9 +38,9 @@ object PlaylistBuilder {
     }
 
     /** Résout tous les éléments en parallèle, puis les garde dans l'ordre. */
-    suspend fun build(tile: Tile): Result = coroutineScope {
+    suspend fun build(tile: Tile, skipAds: Boolean = true): Result = coroutineScope {
         val resolved = tile.items.mapIndexed { index, item ->
-            async { resolve(tile, item, index) }
+            async { resolve(tile, item, index, skipAds) }
         }.awaitAll()
         Result(
             mediaItems = resolved.filterIsInstance<Resolved.Ok>().map { it.item },
@@ -47,11 +48,11 @@ object PlaylistBuilder {
         )
     }
 
-    private suspend fun resolve(tile: Tile, item: PlayItem, index: Int): Resolved {
+    private suspend fun resolve(tile: Tile, item: PlayItem, index: Int, skipAds: Boolean): Resolved {
         val label = item.title.ifBlank { "Élément ${index + 1}" }
         return try {
             when (item) {
-                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index)
+                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, skipAds)
                 is PlayItem.Live -> resolveLive(tile, item, label, index)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -61,7 +62,13 @@ object PlaylistBuilder {
         }
     }
 
-    private suspend fun resolvePodcast(tile: Tile, item: PlayItem.Podcast, label: String, index: Int): Resolved {
+    private suspend fun resolvePodcast(
+        tile: Tile,
+        item: PlayItem.Podcast,
+        label: String,
+        index: Int,
+        skipAds: Boolean,
+    ): Resolved {
         if (!item.hasSource) return Resolved.Skipped("« $label » sauté : émission non choisie")
         val feed = FeedResolver.fetch(item.feedUrl, item.appleId)
         val episode = feed.episodes.firstOrNull()
@@ -80,7 +87,7 @@ object PlaylistBuilder {
         return Resolved.Ok(
             MediaItem.Builder()
                 .setMediaId("${item.id}#$index")
-                .setUri(episode.audioUrl)
+                .setUri(if (skipAds) AdFree.resolve(episode.audioUrl) else episode.audioUrl)
                 .setMediaMetadata(metadata)
                 .build(),
         )

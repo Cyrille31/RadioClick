@@ -42,6 +42,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -171,6 +172,21 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                             shape = SegmentedButtonDefaults.itemShape(index = n - 1, count = 4),
                         ) { Text("$n") }
                     }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Sans publicité", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Lit les émissions sans la publicité insérée au début, quand c'est possible (Radio France).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Switch(checked = config.skipAds, onCheckedChange = vm::setSkipAds)
                 }
                 Text(
                     if (tiles.isEmpty()) {

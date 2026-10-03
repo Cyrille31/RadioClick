@@ -13,6 +13,8 @@ Site : https://cgexcel.wordpress.com/
 ## Fonctions
 
 - **Aucune adresse à connaître** : on tape ce qu'on veut écouter (« journal France Inter 8h », « revue de presse », « France Culture »…), on choisit dans la liste, la tuile est créée. À chaque appui, l'application retrouve elle-même **le dernier épisode publié** — même pour les émissions Radio France, qui ne publient pas de flux RSS dans l'annuaire (les épisodes sont alors lus depuis la fiche Apple Podcasts de l'émission).
+- **Sans publicité** (réglable dans le paramétrage) : pour les émissions Radio France, le fichier original de l'émission est lu directement, sans la publicité que le serveur de diffusion peut insérer au début.
+- **Radios en direct en un appui** : France Inter, franceinfo, France Culture, France Musique, FIP, Mouv', RTL, Europe 1, RMC, RFI, Nostalgie… proposées dans l'écran **+** ; toute autre station se trouve par la recherche.
 - **Grille de tuiles** plein écran (1 à 4 colonnes) : titre, couleur, image ou pochette du podcast.
 - **Un appui = lecture immédiate.** Les flux RSS sont résolus en parallèle, puis lus dans l'ordre.
 - **Mini-lecteur** : élément en cours, position (« 2 / 3 »), lecture/pause, précédent, suivant, stop.

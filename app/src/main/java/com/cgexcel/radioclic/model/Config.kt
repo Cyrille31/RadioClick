@@ -13,6 +13,8 @@ data class AppConfig(
     val format: String = FORMAT,
     val version: Int = 1,
     val columns: Int = 2,
+    /** Lire les épisodes sans la publicité insérée avant l'émission, quand c'est possible. */
+    val skipAds: Boolean = true,
     val tiles: List<Tile> = emptyList(),
 ) {
     companion object {

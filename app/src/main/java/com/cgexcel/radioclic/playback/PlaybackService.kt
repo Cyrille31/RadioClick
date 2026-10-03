@@ -25,6 +25,7 @@ import androidx.media3.session.SessionResult
 import com.cgexcel.radioclic.MainActivity
 import com.cgexcel.radioclic.R
 import com.cgexcel.radioclic.data.ConfigJson
+import com.cgexcel.radioclic.data.ConfigRepository
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.net.Http
 import com.google.common.util.concurrent.Futures
@@ -128,7 +129,8 @@ class PlaybackService : MediaSessionService() {
         }
         player.pause()
 
-        val result = PlaylistBuilder.build(tile)
+        val skipAds = runCatching { ConfigRepository.get(this).load().skipAds }.getOrDefault(true)
+        val result = PlaylistBuilder.build(tile, skipAds)
         if (result.messages.isNotEmpty()) {
             AppMessages.show(this, result.messages.joinToString("\n"))
         }

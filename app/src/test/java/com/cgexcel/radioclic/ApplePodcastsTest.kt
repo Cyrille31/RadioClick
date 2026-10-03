@@ -50,3 +50,15 @@ class ApplePodcastsTest {
         )
     }
 }
+
+class AdFreeTest {
+    @Test
+    fun proxycastLinkPointsToOriginalFile() {
+        val proxy = "https://proxycast.radiofrance.fr/3509/7241/ea9f/21003-03.10.2026-ITEMA_24697040-22-059e.mp3"
+        assertEquals(
+            "https://media.radiofrance-podcast.net/podcast09/21003-03.10.2026-ITEMA_24697040-22-059e.mp3",
+            com.cgexcel.radioclic.net.AdFree.directUrl(proxy),
+        )
+        assertEquals(null, com.cgexcel.radioclic.net.AdFree.directUrl("https://example.org/episode.mp3"))
+    }
+}

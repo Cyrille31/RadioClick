@@ -82,6 +82,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.load() }
     }
 
+    fun setSkipAds(skip: Boolean) = repository.update { it.copy(skipAds = skip) }
+
     fun setColumns(columns: Int) = repository.update { it.copy(columns = columns.coerceIn(1, 4)) }
 
     /** Enregistre un nouvel ordre des tuiles (glisser-déposer). */
@@ -126,10 +128,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Ajoute l'élément choisi dans la recherche : crée la tuile ou complète celle en cours d'édition. */
-    fun addFromSearch(item: PlayItem) {
+    fun addFromSearch(item: PlayItem, color: Long? = null) {
         when (addMode) {
             AddMode.NewTile -> {
-                val tile = Tile(title = item.title, color = nextColor(), items = listOf(item))
+                val tile = Tile(title = item.title, color = color ?: nextColor(), items = listOf(item))
                 repository.update { it.copy(tiles = it.tiles + tile) }
                 backStack.clear()
                 backStack.add(Screen.Home)

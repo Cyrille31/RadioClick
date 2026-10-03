@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +33,8 @@ import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -50,11 +54,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,6 +77,8 @@ import coil.compose.AsyncImage
 import com.cgexcel.radioclic.model.Feed
 import com.cgexcel.radioclic.model.ITunesPodcast
 import com.cgexcel.radioclic.model.PlayItem
+import com.cgexcel.radioclic.model.PopularStation
+import com.cgexcel.radioclic.model.PopularStations
 import com.cgexcel.radioclic.model.RadioStation
 import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.PodcastSearch
@@ -79,6 +87,7 @@ import com.cgexcel.radioclic.net.toUserMessage
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Ajout sans aucune adresse : l'utilisateur tape ce qu'il veut écouter
@@ -98,6 +107,42 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
     var chosenRadio by remember { mutableStateOf<RadioStation?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    var busyStation by remember { mutableStateOf<String?>(null) }
+
+    /** Radio populaire : flux officiel direct, ou recherche de la station dans Radio Browser. */
+    fun pickStation(station: PopularStation) {
+        val url = station.streamUrl
+        if (url != null) {
+            vm.addFromSearch(PlayItem.Live(title = station.name, streamUrl = url), station.color)
+            return
+        }
+        if (busyStation != null) return
+        busyStation = station.name
+        scope.launch {
+            try {
+                val found = RadioSearch.search(station.searchTerm).firstOrNull()
+                if (found == null) {
+                    vm.toast("« ${station.name} » introuvable pour le moment.")
+                } else {
+                    vm.addFromSearch(
+                        PlayItem.Live(
+                            title = station.name,
+                            streamUrl = found.streamUrl,
+                            imageUrl = found.favicon.takeIf { it.isNotBlank() },
+                        ),
+                        station.color,
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                vm.toast("Recherche de « ${station.name} » impossible : ${e.toUserMessage()}")
+            } finally {
+                busyStation = null
+            }
+        }
+    }
 
     // Recherche automatique pendant la saisie (après une courte pause) ou à la validation.
     LaunchedEffect(query) {
@@ -177,7 +222,12 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                 when {
                     loading && podcasts.isEmpty() && radios.isEmpty() ->
                         CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    submitted.isEmpty() -> Intro(onEmptyTile = vm::newEmptyTileFromAdd, showEmptyTile = vm.addMode == AddMode.NewTile)
+                    submitted.isEmpty() -> Intro(
+                        onEmptyTile = vm::newEmptyTileFromAdd,
+                        showEmptyTile = vm.addMode == AddMode.NewTile,
+                        onStation = { station -> pickStation(station) },
+                        busyStation = busyStation,
+                    )
                     else -> LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                         item {
                             Section("Émissions — le dernier épisode est lu automatiquement", Icons.Filled.Podcasts)
@@ -359,12 +409,19 @@ private fun ChoiceLine(selected: Boolean, text: String, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Intro(onEmptyTile: () -> Unit, showEmptyTile: Boolean) {
+private fun Intro(
+    onEmptyTile: () -> Unit,
+    showEmptyTile: Boolean,
+    onStation: (PopularStation) -> Unit,
+    busyStation: String?,
+) {
     Column(
         Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -378,6 +435,36 @@ private fun Intro(onEmptyTile: () -> Unit, showEmptyTile: Boolean) {
                 "Aucune adresse à connaître : le dernier épisode est retrouvé automatiquement à chaque écoute.",
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Radio, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Radios en direct, en un appui",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            PopularStations.forEach { station ->
+                val bg = Color(station.color)
+                AssistChip(
+                    onClick = { onStation(station) },
+                    label = { Text(if (busyStation == station.name) "${station.name}…" else station.name) },
+                    colors = AssistChipDefaults.assistChipColors(containerColor = bg, labelColor = contentColorOn(bg)),
+                    border = null,
+                )
+            }
+        }
+        Text(
+            "Toute autre radio : tapez son nom dans la recherche.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
         )
         if (showEmptyTile) {
             Spacer(Modifier.height(24.dp))
