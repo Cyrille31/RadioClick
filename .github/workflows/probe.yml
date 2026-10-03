@@ -9,16 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for t in "journal france inter de 8h" "journal france inter 8h" "journal 8h france inter" "journal france inter" "journal de 8h" "france inter"; do
-            echo "== ITUNES: $t"
-            curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=$t" -d media=podcast -d entity=podcast -d country=FR -d limit=8 \
-              | python3 -c "import json,sys;d=json.load(sys.stdin);[print(' -',r.get('collectionName'),'|',r.get('artistName'),'|',r.get('feedUrl')) for r in d['results']]"
-          done
-          for t in "france inter" "journal france inter"; do
-            echo "== RADIO: $t"
-            curl -sS -G "https://de1.api.radio-browser.info/json/stations/search" --data-urlencode "name=$t" -d limit=5 -d hidebroken=true -d order=clickcount -d reverse=true \
-              | python3 -c "import json,sys;[print(' -',r['name'],'|',r['url_resolved']) for r in json.load(sys.stdin)]"
-          done
-          echo "== FEED"
-          f=$(curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=journal france inter 8h" -d media=podcast -d entity=podcast -d country=FR -d limit=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['results'][0]['feedUrl'])")
-          curl -sSL "$f" | grep -o '<pubDate>[^<]*\|<title>[^<]*' | head -8
+          set +e
+          curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=journal france inter 8h" -d media=podcast -d entity=podcast -d country=FR -d limit=3 > s.json
+          python3 -c "
+          import json;d=json.load(open('s.json'))
+          for r in d['results']: print({k:r.get(k) for k in ['collectionId','collectionName','feedUrl','collectionViewUrl','releaseDate','trackCount']})
+          "
+          id=$(python3 -c "import json;print([r for r in json.load(open('s.json'))['results'] if '08h00' in r['collectionName']][0]['collectionId'])")
+          echo "== LOOKUP $id"
+          curl -sS "https://itunes.apple.com/lookup?id=$id&entity=podcastEpisode&limit=4&country=FR&sort=recent" > l.json
+          python3 -c "
+          import json;d=json.load(open('l.json'))
+          for r in d['results']: print({k:r.get(k) for k in ['wrapperType','kind','trackName','releaseDate','episodeUrl','feedUrl','artworkUrl600']})
+          "
+          echo "== HEAD episode"
+          u=$(python3 -c "import json;print([r for r in json.load(open('l.json'))['results'] if r.get('episodeUrl')][0]['episodeUrl'])")
+          curl -sSIL "$u" | grep -i "^HTTP\|^content-type\|^location" | head
+          echo "== date"; date -u
