@@ -1,0 +1,24 @@
+# Temporaire : vérification des résultats de recherche (sera supprimé)
+name: Sonde recherche
+on:
+  push:
+    branches: [ 'claude/**' ]
+    paths: [ '.github/workflows/probe.yml' ]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for t in "journal france inter de 8h" "journal france inter 8h" "journal 8h france inter" "journal france inter" "journal de 8h" "france inter"; do
+            echo "== ITUNES: $t"
+            curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=$t" -d media=podcast -d entity=podcast -d country=FR -d limit=8 \
+              | python3 -c "import json,sys;d=json.load(sys.stdin);[print(' -',r.get('collectionName'),'|',r.get('artistName'),'|',r.get('feedUrl')) for r in d['results']]"
+          done
+          for t in "france inter" "journal france inter"; do
+            echo "== RADIO: $t"
+            curl -sS -G "https://de1.api.radio-browser.info/json/stations/search" --data-urlencode "name=$t" -d limit=5 -d hidebroken=true -d order=clickcount -d reverse=true \
+              | python3 -c "import json,sys;[print(' -',r['name'],'|',r['url_resolved']) for r in json.load(sys.stdin)]"
+          done
+          echo "== FEED"
+          f=$(curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=journal france inter 8h" -d media=podcast -d entity=podcast -d country=FR -d limit=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['results'][0]['feedUrl'])")
+          curl -sSL "$f" | grep -o '<pubDate>[^<]*\|<title>[^<]*' | head -8
