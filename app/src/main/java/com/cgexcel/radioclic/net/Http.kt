@@ -23,19 +23,23 @@ object Http {
         .followRedirects(true)
         .followSslRedirects(true)
         .addInterceptor { chain ->
-            chain.proceed(
-                chain.request().newBuilder()
-                    .header("User-Agent", USER_AGENT)
-                    .build(),
-            )
+            val request = chain.request()
+            if (request.header("User-Agent") != null) {
+                chain.proceed(request)
+            } else {
+                chain.proceed(request.newBuilder().header("User-Agent", USER_AGENT).build())
+            }
         }
         .build()
 
     const val USER_AGENT = "RadioClic/${BuildConfig.VERSION_NAME} (Android; CGExcel)"
 
     /** Télécharge le contenu texte d'une URL (thread IO). */
-    suspend fun getText(url: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).build()
+    suspend fun getText(url: String, userAgent: String? = null): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).apply {
+            if (userAgent != null) header("User-Agent", userAgent)
+            header("Accept-Language", "fr-FR,fr;q=0.9")
+        }.build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Erreur HTTP ${response.code}")
             response.body?.string() ?: throw IOException("Réponse vide")

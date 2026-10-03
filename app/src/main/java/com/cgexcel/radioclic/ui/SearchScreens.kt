@@ -87,6 +87,7 @@ fun PodcastSearchScreen(vm: AppViewModel) {
                 p.copy(
                     title = p.title.ifBlank { podcast.name },
                     feedUrl = podcast.feedUrl.orEmpty(),
+                    appleId = podcast.collectionId.takeIf { id -> id > 0 },
                     imageUrl = podcast.artwork,
                 )
             }

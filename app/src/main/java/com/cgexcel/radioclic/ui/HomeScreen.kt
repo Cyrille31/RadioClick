@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
@@ -58,6 +60,9 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
             TopAppBar(
                 title = { Text("RadioClic") },
                 actions = {
+                    IconButton(onClick = { vm.openAdd(AddMode.NewTile) }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Ajouter une émission ou une radio")
+                    }
                     IconButton(onClick = { vm.navigate(Screen.Settings) }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Paramétrage")
                     }
@@ -83,12 +88,15 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Créez vos boutons d'émissions et de radios dans le paramétrage.",
+                    "Tapez simplement le nom d'une émission (ex. « journal France Inter 8h ») " +
+                        "ou d'une radio : aucune adresse à connaître.",
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { vm.navigate(Screen.Settings); vm.newTile() }) {
-                    Text("Créer ma première tuile")
+                Button(onClick = { vm.openAdd(AddMode.NewTile) }) {
+                    Icon(Icons.Filled.Add, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Ajouter une émission ou une radio")
                 }
             }
             return@Scaffold

@@ -37,7 +37,11 @@ sealed interface Screen {
     data object PodcastSearch : Screen
     data object RadioSearch : Screen
     data object About : Screen
+    data object Add : Screen
 }
+
+/** Destination d'un résultat de recherche : nouvelle tuile, ou tuile en cours d'édition. */
+enum class AddMode { NewTile, AddToDraft }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -110,6 +114,52 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         player.stop()
     }
 
+    // --- Ajout par recherche -----------------------------------------------
+
+    var addMode by mutableStateOf(AddMode.NewTile)
+        private set
+
+    /** Ouvre la recherche d'émissions et de radios. */
+    fun openAdd(mode: AddMode) {
+        addMode = mode
+        navigate(Screen.Add)
+    }
+
+    /** Ajoute l'élément choisi dans la recherche : crée la tuile ou complète celle en cours d'édition. */
+    fun addFromSearch(item: PlayItem) {
+        when (addMode) {
+            AddMode.NewTile -> {
+                val tile = Tile(title = item.title, color = nextColor(), items = listOf(item))
+                repository.update { it.copy(tiles = it.tiles + tile) }
+                backStack.clear()
+                backStack.add(Screen.Home)
+                toast(
+                    if (item is PlayItem.Podcast) {
+                        "Tuile « ${tile.title} » créée : un appui lit toujours le dernier épisode."
+                    } else {
+                        "Tuile « ${tile.title} » créée : radio en direct."
+                    },
+                )
+            }
+            AddMode.AddToDraft -> {
+                updateTileDraft { it.copy(items = it.items + item, title = it.title.ifBlank { item.title }) }
+                back()
+            }
+        }
+    }
+
+    /** Depuis la recherche : tuile vide à configurer à la main. */
+    fun newEmptyTileFromAdd() {
+        back()
+        newTile()
+    }
+
+    private fun nextColor(): Long {
+        val used = repository.current().tiles.map { it.color }.toSet()
+        return TilePalette.colors.firstOrNull { it !in used }
+            ?: TilePalette.colors[repository.current().tiles.size % TilePalette.colors.size]
+    }
+
     // --- Édition d'une tuile ------------------------------------------------
 
     var tileDraft by mutableStateOf<Tile?>(null)
@@ -120,9 +170,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var newTileTemplate: Tile? = null
 
     fun newTile() {
-        val used = repository.current().tiles.map { it.color }.toSet()
-        val color = TilePalette.colors.firstOrNull { it !in used } ?: TilePalette.first()
-        val tile = Tile(title = "", color = color)
+        val tile = Tile(title = "", color = nextColor())
         newTileTemplate = tile
         tileDraftOriginal = null
         tileDraft = tile
@@ -216,8 +264,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             is PlayItem.Podcast -> item.feedUrl
             is PlayItem.Live -> item.streamUrl
         }.trim()
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            toast("Indiquez une adresse commençant par http:// ou https://")
+        val urlOk = url.startsWith("http://") || url.startsWith("https://")
+        val podcastFromApple = item is PlayItem.Podcast && item.appleId != null && url.isEmpty()
+        if (!urlOk && !podcastFromApple) {
+            toast(
+                if (item is PlayItem.Podcast) {
+                    "Choisissez l'émission avec « Rechercher », ou saisissez l'adresse de son flux."
+                } else {
+                    "Choisissez la radio avec « Rechercher », ou saisissez l'adresse de son flux."
+                },
+            )
             return
         }
         val title = item.title.trim().ifBlank { Uri.parse(url).host ?: "Sans titre" }

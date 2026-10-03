@@ -52,6 +52,7 @@ fun RadioClicRoot(vm: AppViewModel) {
             Screen.PodcastSearch -> PodcastSearchScreen(vm)
             Screen.RadioSearch -> RadioSearchScreen(vm)
             Screen.About -> AboutScreen(vm)
+            Screen.Add -> AddScreen(vm, snackbar)
         }
     }
 

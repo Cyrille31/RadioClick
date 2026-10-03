@@ -145,7 +145,7 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = vm::newTile,
+                onClick = { vm.openAdd(AddMode.NewTile) },
                 icon = { Icon(Icons.Filled.Add, null) },
                 text = { Text("Ajouter une tuile") },
             )

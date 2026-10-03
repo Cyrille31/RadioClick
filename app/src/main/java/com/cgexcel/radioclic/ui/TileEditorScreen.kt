@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -275,16 +276,16 @@ fun TileEditorScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                 }
             }
             item(key = "add") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = { vm.newItem(PlayItem.Podcast()) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Podcasts, null)
+                Column {
+                    OutlinedButton(onClick = { vm.openAdd(AddMode.AddToDraft) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Search, null)
                         Spacer(Modifier.width(6.dp))
-                        Text("Podcast")
+                        Text("Ajouter une émission ou une radio")
                     }
-                    OutlinedButton(onClick = { vm.newItem(PlayItem.Live()) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Radio, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Radio en direct")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Avancé, avec une adresse :", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { vm.newItem(PlayItem.Podcast()) }) { Text("flux RSS") }
+                        TextButton(onClick = { vm.newItem(PlayItem.Live()) }) { Text("flux radio") }
                     }
                 }
             }

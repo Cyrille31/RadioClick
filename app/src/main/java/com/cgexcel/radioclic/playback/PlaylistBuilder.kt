@@ -12,7 +12,7 @@ import androidx.media3.common.MediaMetadata
 import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.net.Http
-import com.cgexcel.radioclic.net.RssParser
+import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.toUserMessage
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -62,8 +62,8 @@ object PlaylistBuilder {
     }
 
     private suspend fun resolvePodcast(tile: Tile, item: PlayItem.Podcast, label: String, index: Int): Resolved {
-        if (item.feedUrl.isBlank()) return Resolved.Skipped("« $label » sauté : aucune adresse de flux")
-        val feed = RssParser.fetch(item.feedUrl)
+        if (!item.hasSource) return Resolved.Skipped("« $label » sauté : émission non choisie")
+        val feed = FeedResolver.fetch(item.feedUrl, item.appleId)
         val episode = feed.episodes.firstOrNull()
             ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
         if (item.onlyToday && !isToday(episode.pubDate)) {

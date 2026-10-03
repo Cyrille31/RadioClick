@@ -10,17 +10,45 @@ jobs:
     steps:
       - run: |
           set +e
-          for id in 541446017 1409253290; do
-          curl -sSL -m 20 -A "Mozilla/5.0 (Linux; Android 14)" -H "Accept-Language: fr-FR" "https://podcasts.apple.com/fr/podcast/id$id" -o ap.html; ls -la ap.html
-          python3 - <<'PY'
-          import re
-          s=open('ap.html',encoding='utf-8').read()
-          print('scripts:', re.findall(r'<script[^>]*id="([^"]+)"[^>]*>', s)[:10])
-          print('types:', set(re.findall(r'<script type="([^"]+)"', s)))
-          i=s.find('.mp3')
-          print('--- around mp3 ---'); print(s[max(0,i-1500):i+300])
-          keys=re.findall(r'"([a-zA-Z]+)":', s)
-          from collections import Counter
-          print(Counter(keys).most_common(60))
+          cat > p.py <<'PY'
+          import json,re,sys,urllib.request
+          def get(u,ua):
+              r=urllib.request.Request(u,headers={'User-Agent':ua,'Accept-Language':'fr-FR,fr;q=0.9'})
+              return urllib.request.urlopen(r,timeout=20).read().decode('utf-8')
+          def search(t):
+              u='https://itunes.apple.com/search?'+urllib.parse.urlencode({'media':'podcast','entity':'podcast','country':'FR','limit':40,'term':t})
+              return json.loads(get(u,'RadioClic/1.0 (Android; CGExcel)'))['results']
+          def parse(html):
+              m=html.index('id="serialized-server-data"'); st=html.index('>',m)+1; en=html.index('</script>',st)
+              root=json.loads(html[st:en]); out={}
+              def su(o):
+                  c=o.get('currentMediaEnclosure')
+                  if isinstance(c,dict) and isinstance(c.get('streamUrl'),str): return c['streamUrl']
+                  for e in o.get('mediaEnclosures') or []:
+                      if isinstance(e,dict) and isinstance(e.get('streamUrl'),str): return e['streamUrl']
+              def walk(x):
+                  if isinstance(x,list):
+                      for i in x: walk(i)
+                  elif isinstance(x,dict):
+                      t,d,a=x.get('title'),x.get('releaseDate'),su(x)
+                      if isinstance(t,str) and isinstance(d,str) and a and a not in out: out[a]=(d,t)
+                      for v in x.values(): walk(v)
+              walk(root)
+              og=re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"',html)
+              return (og.group(1) if og else None), sorted(((d,t,a) for a,(d,t) in out.items()),reverse=True)
+          for term in ['journal france inter de 8h','revue de presse france inter','les pieds sur terre']:
+              res=search(term)
+              print('==',term,len(res))
+              for r in res[:3]:
+                  print('  *',r.get('collectionName'),'|',r.get('artistName'),'| feed:',bool(r.get('feedUrl')))
+              r=res[1] if term.startswith('journal') else res[0]
+              title,eps=parse(get('https://podcasts.apple.com/fr/podcast/id%d'%r['collectionId'],'Mozilla/5.0 (Linux; Android 14)'))
+              print('  og:title =',title,'| episodes =',len(eps))
+              for d,t,a in eps[:3]: print('   -',d,t,a[:70])
           PY
+          python3 p.py
+          echo "== RADIO fallback"
+          for t in "journal france inter de 8h" "journal france inter" "france inter"; do
+            n=$(curl -sS -G "https://de1.api.radio-browser.info/json/stations/search" --data-urlencode "name=$t" -d limit=5 -d hidebroken=true | python3 -c "import json,sys;print(len(json.load(sys.stdin)))")
+            echo "  $t -> $n"
           done

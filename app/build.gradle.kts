@@ -94,4 +94,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
     implementation(libs.reorderable)
+
+    testImplementation(libs.junit)
 }

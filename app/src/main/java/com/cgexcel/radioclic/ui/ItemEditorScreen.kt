@@ -38,6 +38,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.cgexcel.radioclic.model.Feed
 import com.cgexcel.radioclic.model.PlayItem
-import com.cgexcel.radioclic.net.RssParser
+import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.toUserMessage
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -146,16 +147,15 @@ private fun PodcastFields(vm: AppViewModel, item: PlayItem.Podcast) {
     OutlinedButton(onClick = { vm.navigate(Screen.PodcastSearch) }, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Filled.Search, null)
         Spacer(Modifier.width(8.dp))
-        Text("Rechercher un podcast")
+        Text(if (item.hasSource) "Choisir une autre émission" else "Rechercher l'émission")
     }
-    OutlinedTextField(
-        value = item.feedUrl,
-        onValueChange = { url -> vm.updateItemDraft { (it as PlayItem.Podcast).copy(feedUrl = url.trim()) } },
-        label = { Text("Adresse du flux RSS") },
-        placeholder = { Text("https://…") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-        modifier = Modifier.fillMaxWidth(),
+    Text(
+        if (item.hasSource) {
+            "Le dernier épisode est retrouvé automatiquement à chaque écoute."
+        } else {
+            "Tapez son nom (ex. « journal France Inter 8h ») : aucune adresse à connaître."
+        },
+        style = MaterialTheme.typography.bodySmall,
     )
 
     Text("Épisode à lire", style = MaterialTheme.typography.titleSmall)
@@ -173,6 +173,29 @@ private fun PodcastFields(vm: AppViewModel, item: PlayItem.Podcast) {
     )
 
     FeedPreview(vm, item)
+
+    AdvancedSection("Adresse du flux RSS (facultatif)") {
+        OutlinedTextField(
+            value = item.feedUrl,
+            // Une adresse saisie à la main remplace l'émission trouvée par la recherche.
+            onValueChange = { url -> vm.updateItemDraft { (it as PlayItem.Podcast).copy(feedUrl = url.trim(), appleId = null) } },
+            label = { Text("Adresse du flux RSS") },
+            placeholder = { Text("https://…") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** Bloc repliable pour les réglages réservés aux utilisateurs avertis. */
+@Composable
+private fun AdvancedSection(title: String, content: @Composable () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }) {
+        Text(if (open) "▾ $title" else "▸ $title")
+    }
+    if (open) content()
 }
 
 /** Aperçu des derniers épisodes du flux, pour vérifier que c'est le bon. */
@@ -183,15 +206,16 @@ private fun FeedPreview(vm: AppViewModel, item: PlayItem.Podcast) {
     var loading by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     val url = item.feedUrl
+    val appleId = item.appleId
 
-    LaunchedEffect(url, reload) {
+    LaunchedEffect(url, appleId, reload) {
         feed = null
         error = null
-        if (!url.startsWith("http://") && !url.startsWith("https://")) return@LaunchedEffect
+        if (!item.hasSource) return@LaunchedEffect
         delay(500)
         loading = true
         try {
-            val loaded = RssParser.fetch(url)
+            val loaded = FeedResolver.fetch(url, appleId)
             feed = loaded
             vm.updateItemDraft {
                 val p = it as PlayItem.Podcast
@@ -213,13 +237,13 @@ private fun FeedPreview(vm: AppViewModel, item: PlayItem.Podcast) {
         Text("Aperçu du flux", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
         if (loading) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-        } else if (url.isNotBlank()) {
+        } else if (item.hasSource) {
             IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, "Recharger") }
         }
     }
     when {
-        url.isBlank() -> Text(
-            "Recherchez un podcast ou saisissez l'adresse de son flux RSS.",
+        !item.hasSource -> Text(
+            "Recherchez l'émission pour voir ses derniers épisodes.",
             style = MaterialTheme.typography.bodySmall,
         )
         error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
@@ -262,7 +286,8 @@ private fun FeedPreview(vm: AppViewModel, item: PlayItem.Podcast) {
 
 private val dateFormat = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy 'à' HH'h'mm", Locale.FRENCH)
 
-private fun formatDate(millis: Long?): String {
+/** Date d'un épisode en clair (« Aujourd'hui · samedi 3 octobre 2026 à 08h00 »). */
+fun formatDate(millis: Long?): String {
     if (millis == null) return "date inconnue"
     val zone = ZoneId.systemDefault()
     val date = Instant.ofEpochMilli(millis).atZone(zone)
@@ -275,17 +300,22 @@ private fun LiveFields(vm: AppViewModel, item: PlayItem.Live) {
     OutlinedButton(onClick = { vm.navigate(Screen.RadioSearch) }, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Filled.Search, null)
         Spacer(Modifier.width(8.dp))
-        Text("Rechercher une radio")
+        Text(if (item.streamUrl.isBlank()) "Rechercher la radio" else "Choisir une autre radio")
     }
-    OutlinedTextField(
-        value = item.streamUrl,
-        onValueChange = { url -> vm.updateItemDraft { (it as PlayItem.Live).copy(streamUrl = url.trim()) } },
-        label = { Text("Adresse du flux audio") },
-        placeholder = { Text("https://…") },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    if (item.streamUrl.isBlank()) {
+        Text("Tapez simplement son nom (ex. « France Inter »).", style = MaterialTheme.typography.bodySmall)
+    }
+    AdvancedSection("Adresse du flux audio (facultatif)") {
+        OutlinedTextField(
+            value = item.streamUrl,
+            onValueChange = { url -> vm.updateItemDraft { (it as PlayItem.Live).copy(streamUrl = url.trim()) } },
+            label = { Text("Adresse du flux audio") },
+            placeholder = { Text("https://…") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 
     val limited = (item.maxMinutes ?: 0) > 0
     Row(verticalAlignment = Alignment.CenterVertically) {

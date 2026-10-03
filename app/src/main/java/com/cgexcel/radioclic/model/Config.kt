@@ -43,17 +43,25 @@ sealed class PlayItem {
     abstract val title: String
     abstract val imageUrl: String?
 
-    /** Podcast (flux RSS) : le dernier épisode est lu. */
+    /**
+     * Podcast : le dernier épisode est retrouvé à chaque lecture, via le flux RSS
+     * ou, à défaut (émissions Radio France…), via la fiche Apple Podcasts.
+     */
     @Serializable
     @SerialName("podcast")
     data class Podcast(
         override val id: String = newId(),
         override val title: String = "",
         val feedUrl: String = "",
+        /** Identifiant Apple Podcasts (recherche iTunes) ; null si inconnu. */
+        val appleId: Long? = null,
         override val imageUrl: String? = null,
         /** Ne lire le dernier épisode que s'il est paru aujourd'hui, sinon sauter l'élément. */
         val onlyToday: Boolean = false,
-    ) : PlayItem()
+    ) : PlayItem() {
+        val hasSource: Boolean
+            get() = appleId != null || feedUrl.startsWith("http://") || feedUrl.startsWith("https://")
+    }
 
     /** Radio en direct (URL de flux audio). */
     @Serializable
