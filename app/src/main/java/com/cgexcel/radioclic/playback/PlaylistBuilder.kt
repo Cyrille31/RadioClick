@@ -3,6 +3,8 @@
  */
 package com.cgexcel.radioclic.playback
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
@@ -21,6 +23,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /** Construit l'enchaînement d'une tuile au moment de l'appui. */
+@OptIn(UnstableApi::class)
 object PlaylistBuilder {
 
     /** Clé des extras de métadonnées : durée maximale (ms) d'un direct. */

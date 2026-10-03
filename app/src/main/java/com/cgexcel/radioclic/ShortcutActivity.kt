@@ -3,6 +3,8 @@
  */
 package com.cgexcel.radioclic
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import android.content.ComponentName
 import android.os.Bundle
 import android.widget.Toast
@@ -22,6 +24,7 @@ import kotlinx.coroutines.launch
  * Activité invisible ouverte par un raccourci épinglé : lance la tuile
  * sans afficher la grille, puis se ferme.
  */
+@OptIn(UnstableApi::class)
 class ShortcutActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {

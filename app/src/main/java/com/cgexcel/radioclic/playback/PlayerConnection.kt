@@ -3,6 +3,8 @@
  */
 package com.cgexcel.radioclic.playback
 
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -37,6 +39,7 @@ data class PlayerUiState(
 )
 
 /** Connexion de l'interface au service de lecture (MediaController). */
+@OptIn(UnstableApi::class)
 class PlayerConnection(context: Context) {
 
     private val appContext = context.applicationContext
