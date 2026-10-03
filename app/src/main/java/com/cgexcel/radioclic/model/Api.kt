@@ -39,6 +39,7 @@ data class RadioStation(
     val tags: String = "",
     val codec: String = "",
     val bitrate: Int = 0,
+    val homepage: String = "",
 ) {
     val streamUrl: String get() = urlResolved.ifBlank { url }
 }

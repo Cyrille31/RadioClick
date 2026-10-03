@@ -76,3 +76,34 @@ class AdFreeLiveTest {
         assertEquals(null, com.cgexcel.radioclic.net.AdFree.liveHlsUrl("https://direct.radiopresence.com/presence"))
     }
 }
+
+class LiveTimeshiftTest {
+    private val playlist = """
+        #EXTM3U
+        #EXT-X-VERSION:3
+        #EXT-X-MEDIA-SEQUENCE:2355081
+        #EXT-X-TARGETDURATION:4
+        #EXT-X-START:TIME-OFFSET=0
+        #EXT-X-PROGRAM-DATE-TIME:2026-10-03T12:42:20Z
+        #EXTINF:4.000,
+        /accs3/franceinter/prod1transcoder2/franceinter_aac_hifi_4_2355081_1791031340.ts?id=radiofrance
+        #EXT-X-PROGRAM-DATE-TIME:2026-10-03T12:42:24Z
+        #EXTINF:4.000,
+        /accs3/franceinter/prod1transcoder2/franceinter_aac_hifi_4_2355082_1791031344.ts?id=radiofrance
+    """.trimIndent()
+
+    @Test
+    fun addsOlderSegments() {
+        val out = com.cgexcel.radioclic.playback.LiveTimeshift.extend(
+            playlist,
+            "https://stream.radiofrance.fr/franceinter/franceinter_hifi.m3u8?id=radiofrance",
+            60,
+        ).lines()
+        assert(out.contains("#EXT-X-MEDIA-SEQUENCE:2355066"))
+        assert(out.none { it.startsWith("#EXT-X-START") })
+        assert(out.contains("https://stream.radiofrance.fr/accs3/franceinter/prod1transcoder2/franceinter_aac_hifi_4_2355066_1791031280.ts?id=radiofrance"))
+        assert(out.contains("#EXT-X-PROGRAM-DATE-TIME:2026-10-03T12:41:20Z"))
+        assert(out.contains("https://stream.radiofrance.fr/accs3/franceinter/prod1transcoder2/franceinter_aac_hifi_4_2355082_1791031344.ts?id=radiofrance"))
+        assertEquals(17, out.count { it.startsWith("#EXTINF") })
+    }
+}

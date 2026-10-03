@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.net.Http
@@ -22,6 +23,8 @@ import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /** Construit l'enchaînement d'une tuile au moment de l'appui. */
 @OptIn(UnstableApi::class)
@@ -38,9 +41,12 @@ object PlaylistBuilder {
     }
 
     /** Résout tous les éléments en parallèle, puis les garde dans l'ordre. */
-    suspend fun build(tile: Tile, skipAds: Boolean = true): Result = coroutineScope {
+    /** Réglages de lecture utiles à la construction. */
+    data class Options(val skipAds: Boolean = true, val liveRewindMinutes: Int = 0)
+
+    suspend fun build(tile: Tile, options: Options = Options()): Result = coroutineScope {
         val resolved = tile.items.mapIndexed { index, item ->
-            async { resolve(tile, item, index, skipAds) }
+            async { resolve(tile, item, index, options) }
         }.awaitAll()
         Result(
             mediaItems = resolved.filterIsInstance<Resolved.Ok>().map { it.item },
@@ -48,12 +54,12 @@ object PlaylistBuilder {
         )
     }
 
-    private suspend fun resolve(tile: Tile, item: PlayItem, index: Int, skipAds: Boolean): Resolved {
+    private suspend fun resolve(tile: Tile, item: PlayItem, index: Int, options: Options): Resolved {
         val label = item.title.ifBlank { "Élément ${index + 1}" }
         return try {
             when (item) {
-                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, skipAds)
-                is PlayItem.Live -> resolveLive(tile, item, label, index, skipAds)
+                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, options.skipAds)
+                is PlayItem.Live -> resolveLive(tile, item, label, index, options)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -76,9 +82,11 @@ object PlaylistBuilder {
         if (item.onlyToday && !isToday(episode.pubDate)) {
             return Resolved.Skipped("« $label » pas encore en ligne")
         }
+        // La date et l'heure de l'épisode sont toujours affichées, quand le flux les donne.
+        val dated = episode.pubDate?.let { "${shortDate(it)} · ${episode.title}" } ?: episode.title
         val metadata = MediaMetadata.Builder()
             .setTitle(label)
-            .setArtist(episode.title)
+            .setArtist(dated)
             .setAlbumTitle(tile.title)
             .setArtworkUri((episode.imageUrl ?: item.imageUrl ?: feed.imageUrl)?.let(Uri::parse))
             .setIsPlayable(true)
@@ -98,12 +106,22 @@ object PlaylistBuilder {
         item: PlayItem.Live,
         label: String,
         index: Int,
-        skipAds: Boolean,
+        options: Options,
     ): Resolved {
         if (item.streamUrl.isBlank()) return Resolved.Skipped("« $label » sauté : aucune adresse de flux")
         val original = item.streamUrl.trim()
-        val adFree = if (skipAds) AdFree.resolveLive(original).takeIf { it != original } else null
-        val url = adFree ?: resolveStreamPlaylist(original)
+        val rewind = options.liveRewindMinutes
+        // Flux HLS Radio France : sans publicité au lancement, et permet de reculer dans le direct.
+        val hls = when {
+            LiveTimeshift.isRadioFranceHls(original) -> original
+            options.skipAds || rewind > 0 -> AdFree.resolveLive(original).takeIf { it != original }
+            else -> null
+        }
+        val url = when {
+            hls != null && rewind > 0 -> LiveTimeshift.wrap(hls, rewind)
+            hls != null -> hls
+            else -> resolveStreamPlaylist(original)
+        }
         val extras = Bundle()
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
         val metadata = MediaMetadata.Builder()
@@ -119,10 +137,16 @@ object PlaylistBuilder {
             MediaItem.Builder()
                 .setMediaId("${item.id}#$index")
                 .setUri(url)
+                .apply { if (hls != null) setMimeType(MimeTypes.APPLICATION_M3U8) }
                 .setMediaMetadata(metadata)
                 .build(),
         )
     }
+
+    private val shortDateFormat = DateTimeFormatter.ofPattern("EEE d MMM, HH'h'mm", Locale.FRENCH)
+
+    private fun shortDate(millis: Long): String =
+        shortDateFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
 
     /** Les fichiers .pls / .m3u ne sont pas lus directement : on en extrait la première URL. */
     private suspend fun resolveStreamPlaylist(url: String): String {

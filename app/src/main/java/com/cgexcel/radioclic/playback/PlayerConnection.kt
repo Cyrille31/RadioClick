@@ -36,6 +36,10 @@ data class PlayerUiState(
     val hasNext: Boolean = false,
     /** Titre de la tuile en cours de préparation (résolution des flux), sinon null. */
     val loadingTile: String? = null,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val isLive: Boolean = false,
+    val isSeekable: Boolean = false,
 )
 
 /** Connexion de l'interface au service de lecture (MediaController). */
@@ -59,7 +63,16 @@ class PlayerConnection(context: Context) {
         override fun onEvents(player: Player, events: Player.Events) = refresh()
     }
 
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val ticker = object : Runnable {
+        override fun run() {
+            refresh()
+            handler.postDelayed(this, 500)
+        }
+    }
+
     init {
+        handler.post(ticker)
         future.addListener({
             val c = runCatching { future.get() }.getOrNull() ?: return@addListener
             controller = c
@@ -105,6 +118,28 @@ class PlayerConnection(context: Context) {
         controller?.takeIf { it.hasNextMediaItem() }?.seekToNextMediaItem()
     }
 
+    /** Avance (delta positif) ou recule dans l'épisode ou dans la fenêtre du direct. */
+    fun seekBy(deltaMs: Long) {
+        val c = controller ?: return
+        if (!c.isCurrentMediaItemSeekable) return
+        val duration = c.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: Long.MAX_VALUE
+        c.seekTo((c.currentPosition + deltaMs).coerceIn(0, duration))
+        refresh()
+    }
+
+    fun seekTo(positionMs: Long) {
+        val c = controller ?: return
+        if (!c.isCurrentMediaItemSeekable) return
+        c.seekTo(positionMs.coerceAtLeast(0))
+        refresh()
+    }
+
+    /** Revient au direct après avoir reculé. */
+    fun goLive() {
+        controller?.seekToDefaultPosition()
+        refresh()
+    }
+
     fun stop() {
         controller?.run {
             stop()
@@ -113,6 +148,7 @@ class PlayerConnection(context: Context) {
     }
 
     fun release() {
+        handler.removeCallbacks(ticker)
         controller?.removeListener(listener)
         MediaController.releaseFuture(future)
         controller = null
@@ -134,6 +170,10 @@ class PlayerConnection(context: Context) {
                 count = c.mediaItemCount,
                 hasPrevious = c.hasPreviousMediaItem(),
                 hasNext = c.hasNextMediaItem(),
+                positionMs = c.currentPosition.coerceAtLeast(0),
+                durationMs = c.duration.takeIf { d -> d != androidx.media3.common.C.TIME_UNSET && d > 0 } ?: 0,
+                isLive = c.isCurrentMediaItemLive,
+                isSeekable = c.isCurrentMediaItemSeekable,
             )
         }
     }

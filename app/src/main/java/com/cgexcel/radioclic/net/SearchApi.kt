@@ -88,29 +88,13 @@ object RadioSearch {
         addQueryParameter("url", streamUrl)
     }
 
-    /**
-     * Logo d'une station : d'abord par l'adresse exacte du flux, sinon par le nom.
-     * Les images nettes (PNG, JPG, SVG) sont préférées aux petites icônes .ico.
-     */
-    suspend fun findLogo(streamUrl: String, name: String): String? {
+    /** Stations correspondant à un flux : même adresse, sinon même nom. */
+    suspend fun related(streamUrl: String, name: String): List<RadioStation> {
         val byUrl = runCatching { byUrl(streamUrl) }.getOrDefault(emptyList())
-        bestLogo(byUrl)?.let { return it }
         val byName = runCatching { searchExact(name) }.getOrDefault(emptyList())
             .filter { it.name.trim().equals(name.trim(), ignoreCase = true) }
-        return bestLogo(byName)
+        return byUrl + byName
     }
-
-    private fun bestLogo(stations: List<RadioStation>): String? =
-        stations.map { it.favicon.trim() }
-            .filter { it.startsWith("http://") || it.startsWith("https://") }
-            .maxByOrNull { url ->
-                val path = url.substringBefore('?').lowercase()
-                when {
-                    path.endsWith(".ico") -> 0
-                    "favicon" in path -> 1
-                    else -> 2
-                }
-            }
 
     private suspend fun query(
         path: String,

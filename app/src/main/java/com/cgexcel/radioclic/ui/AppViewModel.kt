@@ -17,7 +17,7 @@ import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.model.TilePalette
 import com.cgexcel.radioclic.model.newId
-import com.cgexcel.radioclic.net.RadioSearch
+import com.cgexcel.radioclic.net.Logos
 import com.cgexcel.radioclic.net.toUserMessage
 import com.cgexcel.radioclic.playback.PlayerConnection
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -88,23 +88,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val logoAttempts = mutableSetOf<String>()
 
-    /** Ajoute le logo des radios en direct qui n'en ont pas (recherche dans Radio Browser). */
+    /**
+     * Donne un logo aux radios en direct qui n'en ont pas, ou dont l'image ne
+     * s'affiche pas (adresse cassée, format refusé…).
+     */
     private fun fillMissingLogos() = viewModelScope.launch {
-        val missing = repository.current().tiles.flatMap { it.items }
+        val app = getApplication<Application>()
+        val lives = repository.current().tiles.flatMap { it.items }
             .filterIsInstance<PlayItem.Live>()
-            .filter { it.imageUrl.isNullOrBlank() && it.streamUrl.isNotBlank() && logoAttempts.add(it.id) }
-        for (live in missing) {
-            val logo = runCatching { RadioSearch.findLogo(live.streamUrl, live.title) }.getOrNull() ?: continue
+            .filter { it.streamUrl.isNotBlank() && logoAttempts.add(it.id) }
+        for (live in lives) {
+            val current = live.imageUrl?.takeIf { it.isNotBlank() }
+            if (current != null && runCatching { Logos.works(app, current) }.getOrDefault(false)) continue
+            val logo = runCatching { Logos.find(app, live.streamUrl, live.title) }.getOrNull() ?: continue
             repository.update { cfg ->
                 cfg.copy(
                     tiles = cfg.tiles.map { tile ->
                         tile.copy(
                             items = tile.items.map { item ->
-                                if (item is PlayItem.Live && item.id == live.id && item.imageUrl.isNullOrBlank()) {
-                                    item.copy(imageUrl = logo)
-                                } else {
-                                    item
-                                }
+                                if (item is PlayItem.Live && item.id == live.id) item.copy(imageUrl = logo) else item
                             },
                         )
                     },
@@ -112,6 +114,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    fun setSeekSeconds(seconds: Int) = repository.update { it.copy(seekSeconds = seconds) }
+
+    fun setLiveRewindMinutes(minutes: Int) = repository.update { it.copy(liveRewindMinutes = minutes) }
 
     fun setSkipAds(skip: Boolean) = repository.update { it.copy(skipAds = skip) }
 

@@ -18,7 +18,11 @@ Site : https://cgexcel.wordpress.com/
 - **Radios en direct en un appui** : France Inter, franceinfo, France Culture, France Musique, FIP, Mouv', RTL, Europe 1, RMC, RFI, Nostalgie… proposées dans l'écran **+** ; toute autre station se trouve par la recherche.
 - **Grille de tuiles** plein écran (1 à 4 colonnes) : titre, couleur, image ou pochette du podcast.
 - **Un appui = lecture immédiate.** Les flux RSS sont résolus en parallèle, puis lus dans l'ordre.
-- **Mini-lecteur** : élément en cours, position (« 2 / 3 »), lecture/pause, précédent, suivant, stop.
+- **Mini-lecteur** : élément en cours, date et heure de l'épisode, position (« 2 / 3 »), lecture/pause, précédent, suivant, stop.
+- **Chrono et barre de temps** pour les émissions en replay : temps écoulé / restant, curseur déplaçable, boutons reculer / avancer (15 s par défaut, réglable : 5, 10, 15, 30 ou 60 s).
+- **Retour en arrière dans les directs Radio France** (15 min par défaut, réglable jusqu'à 1 h), avec bouton « Revenir au direct ». Les autres radios en direct ne le permettent pas.
+- **Tuiles déplaçables sur l'écran principal**, comme les icônes d'Android : appui long puis glisser ; un appui long sans bouger ouvre le menu de la tuile.
+- **Logos des radios** retrouvés automatiquement (annuaire Radio Browser, site de la station, pochettes Apple Podcasts), même pour les tuiles déjà créées.
 - **Lecture en arrière-plan** (Media3 / ExoPlayer) : écran éteint, notification, écran de verrouillage, Bluetooth (voiture, casque), pause pendant un appel puis reprise.
 - **Types d'éléments**
   - *Podcast (RSS)* : dernier épisode, ou « uniquement s'il est du jour » (sinon l'élément est sauté avec un message, par ex. « Journal de 8h pas encore en ligne »).

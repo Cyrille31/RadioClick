@@ -15,6 +15,10 @@ data class AppConfig(
     val columns: Int = 2,
     /** Lire les épisodes sans la publicité insérée avant l'émission, quand c'est possible. */
     val skipAds: Boolean = true,
+    /** Saut avant / arrière des boutons du lecteur, en secondes. */
+    val seekSeconds: Int = 15,
+    /** Retour possible dans le passé pendant un direct Radio France, en minutes (0 : désactivé). */
+    val liveRewindMinutes: Int = 15,
     val tiles: List<Tile> = emptyList(),
 ) {
     companion object {
