@@ -53,7 +53,7 @@ object PlaylistBuilder {
         return try {
             when (item) {
                 is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, skipAds)
-                is PlayItem.Live -> resolveLive(tile, item, label, index)
+                is PlayItem.Live -> resolveLive(tile, item, label, index, skipAds)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -93,9 +93,17 @@ object PlaylistBuilder {
         )
     }
 
-    private suspend fun resolveLive(tile: Tile, item: PlayItem.Live, label: String, index: Int): Resolved {
+    private suspend fun resolveLive(
+        tile: Tile,
+        item: PlayItem.Live,
+        label: String,
+        index: Int,
+        skipAds: Boolean,
+    ): Resolved {
         if (item.streamUrl.isBlank()) return Resolved.Skipped("« $label » sauté : aucune adresse de flux")
-        val url = resolveStreamPlaylist(item.streamUrl.trim())
+        val original = item.streamUrl.trim()
+        val adFree = if (skipAds) AdFree.resolveLive(original).takeIf { it != original } else null
+        val url = adFree ?: resolveStreamPlaylist(original)
         val extras = Bundle()
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
         val metadata = MediaMetadata.Builder()

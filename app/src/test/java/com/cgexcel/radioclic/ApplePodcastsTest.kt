@@ -62,3 +62,17 @@ class AdFreeTest {
         assertEquals(null, com.cgexcel.radioclic.net.AdFree.directUrl("https://example.org/episode.mp3"))
     }
 }
+
+class AdFreeLiveTest {
+    @Test
+    fun radioFranceLiveUsesHls() {
+        val hls = "https://stream.radiofrance.fr/franceinter/franceinter_hifi.m3u8?id=radiofrance"
+        assertEquals(hls, com.cgexcel.radioclic.net.AdFree.liveHlsUrl("https://icecast.radiofrance.fr/franceinter-hifi.aac"))
+        assertEquals(hls, com.cgexcel.radioclic.net.AdFree.liveHlsUrl("http://direct.franceinter.fr/live/franceinter-midfi.mp3"))
+        assertEquals(
+            "https://stream.radiofrance.fr/fbtoulouse/fbtoulouse_hifi.m3u8?id=radiofrance",
+            com.cgexcel.radioclic.net.AdFree.liveHlsUrl("https://icecast.radiofrance.fr/fbtoulouse-midfi.mp3?ID=radiofrance"),
+        )
+        assertEquals(null, com.cgexcel.radioclic.net.AdFree.liveHlsUrl("https://direct.radiopresence.com/presence"))
+    }
+}
