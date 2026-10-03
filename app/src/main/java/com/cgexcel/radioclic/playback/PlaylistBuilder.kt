@@ -33,6 +33,9 @@ object PlaylistBuilder {
     /** Clé des extras de métadonnées : durée maximale (ms) d'un direct. */
     const val EXTRA_MAX_DURATION_MS = "radioclic.maxDurationMs"
 
+    /** Clé des extras : adresse directe d'un direct lu via le tampon (repli en cas d'échec). */
+    const val EXTRA_DIRECT_URL = "radioclic.directUrl"
+
     class Result(val mediaItems: List<MediaItem>, val messages: List<String>)
 
     private sealed class Resolved {
@@ -117,12 +120,16 @@ object PlaylistBuilder {
             options.skipAds || rewind > 0 -> AdFree.resolveLive(original).takeIf { it != original }
             else -> null
         }
+        val direct = hls ?: resolveStreamPlaylist(original)
+        // Autres directs : enregistrés au fur et à mesure pour permettre de reculer.
+        val buffered = hls == null && rewind > 0 && LiveBuffer.canBuffer(direct)
         val url = when {
             hls != null && rewind > 0 -> LiveTimeshift.wrap(hls, rewind)
-            hls != null -> hls
-            else -> resolveStreamPlaylist(original)
+            buffered -> LiveBuffer.uri(direct, rewind)
+            else -> direct
         }
         val extras = Bundle()
+        if (buffered) extras.putString(EXTRA_DIRECT_URL, direct)
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
         val metadata = MediaMetadata.Builder()
             .setTitle(label)

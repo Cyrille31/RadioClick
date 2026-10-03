@@ -40,6 +40,8 @@ data class PlayerUiState(
     val durationMs: Long = 0,
     val isLive: Boolean = false,
     val isSeekable: Boolean = false,
+    /** Direct enregistré sur le téléphone (retour en arrière possible), sinon null. */
+    val liveBuffer: LiveBufferStatus.State? = null,
 )
 
 /** Connexion de l'interface au service de lecture (MediaController). */
@@ -121,6 +123,10 @@ class PlayerConnection(context: Context) {
     /** Avance (delta positif) ou recule dans l'épisode ou dans la fenêtre du direct. */
     fun seekBy(deltaMs: Long) {
         val c = controller ?: return
+        if (_state.value.liveBuffer != null) {
+            sendLiveSeek(deltaMs, toLive = false)
+            return
+        }
         if (!c.isCurrentMediaItemSeekable) return
         val duration = c.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: Long.MAX_VALUE
         c.seekTo((c.currentPosition + deltaMs).coerceIn(0, duration))
@@ -129,6 +135,10 @@ class PlayerConnection(context: Context) {
 
     fun seekTo(positionMs: Long) {
         val c = controller ?: return
+        _state.value.liveBuffer?.let { buffer ->
+            sendLiveSeek(positionMs - buffer.positionMs, toLive = false)
+            return
+        }
         if (!c.isCurrentMediaItemSeekable) return
         c.seekTo(positionMs.coerceAtLeast(0))
         refresh()
@@ -136,8 +146,21 @@ class PlayerConnection(context: Context) {
 
     /** Revient au direct après avoir reculé. */
     fun goLive() {
+        if (_state.value.liveBuffer != null) {
+            sendLiveSeek(0, toLive = true)
+            return
+        }
         controller?.seekToDefaultPosition()
         refresh()
+    }
+
+    private fun sendLiveSeek(deltaMs: Long, toLive: Boolean) {
+        val c = controller ?: return
+        val args = Bundle().apply {
+            putLong(PlaybackService.KEY_DELTA_MS, deltaMs)
+            putBoolean(PlaybackService.KEY_TO_LIVE, toLive)
+        }
+        c.sendCustomCommand(SessionCommand(PlaybackService.CMD_LIVE_SEEK, Bundle.EMPTY), args)
     }
 
     fun stop() {
@@ -174,6 +197,7 @@ class PlayerConnection(context: Context) {
                 durationMs = c.duration.takeIf { d -> d != androidx.media3.common.C.TIME_UNSET && d > 0 } ?: 0,
                 isLive = c.isCurrentMediaItemLive,
                 isSeekable = c.isCurrentMediaItemSeekable,
+                liveBuffer = LiveBufferStatus.current.value?.takeIf { item != null },
             )
         }
     }

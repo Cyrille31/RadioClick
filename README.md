@@ -20,7 +20,9 @@ Site : https://cgexcel.wordpress.com/
 - **Un appui = lecture immédiate.** Les flux RSS sont résolus en parallèle, puis lus dans l'ordre.
 - **Mini-lecteur** : élément en cours, date et heure de l'épisode, position (« 2 / 3 »), lecture/pause, précédent, suivant, stop.
 - **Chrono et barre de temps** pour les émissions en replay : temps écoulé / restant, curseur déplaçable, boutons reculer / avancer (15 s par défaut, réglable : 5, 10, 15, 30 ou 60 s).
-- **Retour en arrière dans les directs Radio France** (15 min par défaut, réglable jusqu'à 1 h), avec bouton « Revenir au direct ». Les autres radios en direct ne le permettent pas.
+- **Retour en arrière dans les directs** (15 min par défaut, réglable jusqu'à 1 h), avec bouton « Revenir au direct » :
+  - Radio France : jusqu'à la limite réglée, même avant le lancement de la tuile (segments conservés par Radio France) ;
+  - autres radios (flux MP3 / AAC) : le direct est enregistré au fur et à mesure sur le téléphone, on peut donc revenir sur ce qui a déjà été reçu depuis le lancement, et une pause reprend là où on s'était arrêté.
 - **Tuiles déplaçables sur l'écran principal**, comme les icônes d'Android : appui long puis glisser ; un appui long sans bouger ouvre le menu de la tuile.
 - **Logos des radios** retrouvés automatiquement (annuaire Radio Browser, site de la station, pochettes Apple Podcasts), même pour les tuiles déjà créées.
 - **Lecture en arrière-plan** (Media3 / ExoPlayer) : écran éteint, notification, écran de verrouillage, Bluetooth (voiture, casque), pause pendant un appel puis reprise.

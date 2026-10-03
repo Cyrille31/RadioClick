@@ -37,6 +37,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.max
 
 /**
  * Service de lecture : ExoPlayer + MediaSession (arrière-plan, notification,
@@ -52,9 +53,11 @@ class PlaybackService : MediaSessionService() {
 
     /** Temps de lecture écoulé (ms) de l'élément en cours, pour les directs à durée limitée. */
     private var elapsedOnItemMs = 0L
+    private var lastMediaId: String? = null
 
     override fun onCreate() {
         super.onCreate()
+        LiveBuffer.init(this)
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(Http.USER_AGENT)
@@ -64,7 +67,9 @@ class PlaybackService : MediaSessionService() {
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
 
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(LiveTimeshift.Source.Factory(dataSourceFactory)))
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(LiveBuffer.Source.Factory(LiveTimeshift.Source.Factory(dataSourceFactory))),
+            )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -108,6 +113,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         scope.cancel()
+        LiveBuffer.releaseAllExcept(null)
+        LiveBufferStatus.current.value = null
         session?.run {
             player.release()
             release()
@@ -153,6 +160,44 @@ class PlaybackService : MediaSessionService() {
     private fun stopAndClear() {
         player.stop()
         player.clearMediaItems()
+        LiveBuffer.releaseAllExcept(null)
+        LiveBufferStatus.current.value = null
+    }
+
+    private fun MediaItem.bufferSource(): String? = LiveBuffer.sourceOf(localConfiguration?.uri)
+
+    /**
+     * Déplacement dans un direct enregistré : [deltaMs] relatif, ou retour au direct.
+     * L'élément est relancé à la nouvelle position du tampon.
+     */
+    private fun seekInBuffer(deltaMs: Long, toLive: Boolean) {
+        val item = player.currentMediaItem ?: return
+        val src = item.bufferSource() ?: return
+        val buffer = LiveBuffer.get(src) ?: return
+        val rate = buffer.bytesPerSecond()
+        val now = buffer.playbackPosition(player.currentPosition)
+        val target = (if (toLive) buffer.written - rate else now + deltaMs * rate / 1000)
+            .coerceIn(buffer.oldest + rate / 2, max(buffer.oldest, buffer.written - rate / 2))
+        val minutes = item.localConfiguration?.uri?.getQueryParameter("min")?.toIntOrNull() ?: 15
+        val moved = item.buildUpon().setUri(LiveBuffer.uri(src, minutes, target)).build()
+        val wasPlaying = player.playWhenReady
+        player.replaceMediaItem(player.currentMediaItemIndex, moved)
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        player.playWhenReady = wasPlaying
+    }
+
+    /** Publie la position dans le tampon du direct pour le mini-lecteur. */
+    private fun publishBufferStatus() {
+        val src = player.currentMediaItem?.bufferSource()
+        val buffer = src?.let { LiveBuffer.get(it) }
+        if (buffer == null || buffer.written == 0L) {
+            LiveBufferStatus.current.value = null
+            return
+        }
+        val rate = buffer.bytesPerSecond()
+        val window = (buffer.written - buffer.oldest) * 1000 / rate
+        val position = (buffer.playbackPosition(player.currentPosition) - buffer.oldest) * 1000 / rate
+        LiveBufferStatus.current.value = LiveBufferStatus.State(window, position.coerceIn(0, window))
     }
 
     /** Passe à l'élément suivant quand un direct a atteint sa durée maximale. */
@@ -160,6 +205,7 @@ class PlaybackService : MediaSessionService() {
         scope.launch {
             while (isActive) {
                 delay(1_000)
+                publishBufferStatus()
                 val maxMs = player.currentMediaItem?.maxDurationMs() ?: continue
                 if (!player.isPlaying) continue
                 elapsedOnItemMs += 1_000
@@ -176,7 +222,11 @@ class PlaybackService : MediaSessionService() {
 
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            elapsedOnItemMs = 0
+            // Un déplacement dans le tampon relance le même élément : le compteur continue.
+            if (mediaItem?.mediaId != lastMediaId) elapsedOnItemMs = 0
+            lastMediaId = mediaItem?.mediaId
+            LiveBuffer.releaseAllExcept(mediaItem?.bufferSource())
+            publishBufferStatus()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -184,6 +234,16 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            // Direct enregistré en échec (format non pris en charge…) : on le lit sans tampon.
+            val current = player.currentMediaItem
+            val direct = current?.mediaMetadata?.extras?.getString(PlaylistBuilder.EXTRA_DIRECT_URL)
+            if (current != null && direct != null && current.bufferSource() != null) {
+                LiveBuffer.releaseAllExcept(null)
+                player.replaceMediaItem(player.currentMediaItemIndex, current.buildUpon().setUri(direct).build())
+                player.prepare()
+                player.play()
+                return
+            }
             val title = player.currentMediaItem?.mediaMetadata?.title ?: "élément"
             val reason = if (error.errorCode in 2000..2999) "réseau ou flux indisponible" else "format non lisible"
             if (player.hasNextMediaItem()) {
@@ -206,6 +266,7 @@ class PlaybackService : MediaSessionService() {
             if (controller.packageName != packageName) return super.onConnect(session, controller)
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                 .add(SessionCommand(CMD_PLAY_TILE, Bundle.EMPTY))
+                .add(SessionCommand(CMD_LIVE_SEEK, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
@@ -218,6 +279,11 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CMD_LIVE_SEEK) {
+                seekInBuffer(args.getLong(KEY_DELTA_MS), args.getBoolean(KEY_TO_LIVE))
+                publishBufferStatus()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction != CMD_PLAY_TILE) {
                 return super.onCustomCommand(session, controller, customCommand, args)
             }
@@ -242,5 +308,10 @@ class PlaybackService : MediaSessionService() {
         /** Commande personnalisée : lancer une tuile (JSON dans KEY_TILE_JSON). */
         const val CMD_PLAY_TILE = "com.cgexcel.radioclic.PLAY_TILE"
         const val KEY_TILE_JSON = "tile"
+
+        /** Déplacement dans un direct enregistré (KEY_DELTA_MS, ou KEY_TO_LIVE). */
+        const val CMD_LIVE_SEEK = "com.cgexcel.radioclic.LIVE_SEEK"
+        const val KEY_DELTA_MS = "deltaMs"
+        const val KEY_TO_LIVE = "toLive"
     }
 }
