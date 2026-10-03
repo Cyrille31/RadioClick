@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -158,47 +159,6 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Nombre de colonnes", style = MaterialTheme.typography.titleSmall)
-                SingleChoiceSegmentedButtonRow(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                ) {
-                    (1..4).forEach { n ->
-                        SegmentedButton(
-                            selected = config.columns == n,
-                            onClick = { vm.setColumns(n) },
-                            shape = SegmentedButtonDefaults.itemShape(index = n - 1, count = 4),
-                        ) { Text("$n") }
-                    }
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Sans publicité", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Lit les émissions sans la publicité insérée au début, quand c'est possible (Radio France).",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Switch(checked = config.skipAds, onCheckedChange = vm::setSkipAds)
-                }
-                Text(
-                    if (tiles.isEmpty()) {
-                        "Ajoutez une première tuile avec le bouton en bas de l'écran."
-                    } else {
-                        "Touchez une tuile pour la modifier. Appui long puis glisser pour la déplacer."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
             LazyVerticalGrid(
                 columns = GridCells.Fixed(config.columns.coerceAtMost(2)),
                 state = gridState,
@@ -207,6 +167,63 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // Réglages en tête de la liste, qui défile entièrement.
+                item(key = "settings", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("Nombre de colonnes", style = MaterialTheme.typography.titleSmall)
+                        SingleChoiceSegmentedButtonRow(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                        ) {
+                            (1..4).forEach { n ->
+                                SegmentedButton(
+                                    selected = config.columns == n,
+                                    onClick = { vm.setColumns(n) },
+                                    shape = SegmentedButtonDefaults.itemShape(index = n - 1, count = 4),
+                                ) { Text("$n") }
+                            }
+                        }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Sans publicité", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Lit les émissions sans la publicité insérée au début, quand c'est possible (Radio France).",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            Switch(checked = config.skipAds, onCheckedChange = vm::setSkipAds)
+                        }
+                        ChoiceSetting(
+                            title = "Boutons avancer / reculer",
+                            values = listOf(5, 10, 15, 30, 60),
+                            selected = config.seekSeconds,
+                            label = { "$it s" },
+                            onSelect = vm::setSeekSeconds,
+                        )
+                        ChoiceSetting(
+                            title = "Retour possible dans un direct Radio France",
+                            values = listOf(0, 15, 30, 60),
+                            selected = config.liveRewindMinutes,
+                            label = { if (it == 0) "Non" else "$it min" },
+                            onSelect = vm::setLiveRewindMinutes,
+                        )
+                        Text(
+                            if (tiles.isEmpty()) {
+                                "Ajoutez une première tuile avec le bouton en bas de l'écran."
+                            } else {
+                                "Touchez une tuile pour la modifier. Appui long puis glisser pour la déplacer (aussi possible sur l'écran principal)."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
                 items(tiles, key = { it.id }) { tile ->
                     ReorderableItem(reorderState, key = tile.id) { isDragging ->
                         TileCard(
@@ -258,6 +275,30 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
             },
             dismissButton = { TextButton(onClick = { confirmDeleteAll = false }) { Text("Annuler") } },
         )
+    }
+}
+
+@Composable
+private fun ChoiceSetting(
+    title: String,
+    values: List<Int>,
+    selected: Int,
+    label: (Int) -> String,
+    onSelect: (Int) -> Unit,
+) {
+    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
+    SingleChoiceSegmentedButtonRow(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+    ) {
+        values.forEachIndexed { index, value ->
+            SegmentedButton(
+                selected = selected == value,
+                onClick = { onSelect(value) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = values.size),
+            ) { Text(label(value), maxLines = 1) }
+        }
     }
 }
 

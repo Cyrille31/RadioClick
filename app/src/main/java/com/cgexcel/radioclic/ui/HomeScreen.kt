@@ -46,6 +46,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cgexcel.radioclic.model.AppConfig
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.rememberReorderableLazyGridState
+import sh.calvin.reorderable.ReorderableItem
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.draw.scale
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 
 /** Écran principal : la grille de tuiles et le mini-lecteur. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,7 +76,7 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
                 },
             )
         },
-        bottomBar = { MiniPlayer(playerState, vm.player) },
+        bottomBar = { MiniPlayer(playerState, vm.player, config.seekSeconds) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         if (config.tiles.isEmpty()) {
@@ -102,8 +109,27 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
             return@Scaffold
         }
 
+        // Comme sur l'écran d'accueil d'Android : appui long puis glisser pour déplacer
+        // une tuile ; appui long sans bouger pour ouvrir son menu.
+        var tiles by remember { mutableStateOf(config.tiles) }
+        LaunchedEffect(config.tiles) { tiles = config.tiles }
+        var menuTileId by remember { mutableStateOf<String?>(null) }
+        var movedDuringDrag by remember { mutableStateOf(false) }
+        val haptic = LocalHapticFeedback.current
+        val gridState = rememberLazyGridState()
+        val reorderState = rememberReorderableLazyGridState(gridState) { from, to ->
+            val fromIndex = tiles.indexOfFirst { it.id == from.key }
+            val toIndex = tiles.indexOfFirst { it.id == to.key }
+            if (fromIndex >= 0 && toIndex >= 0 && fromIndex != toIndex) {
+                movedDuringDrag = true
+                tiles = tiles.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(config.columns),
+            state = gridState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
@@ -111,40 +137,51 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(config.tiles, key = { it.id }) { tile ->
-                var menuOpen by remember { mutableStateOf(false) }
-                Box {
-                    TileCard(
-                        tile = tile,
-                        columns = config.columns,
-                        playing = playerState.hasMedia && vm.lastTileId == tile.id,
-                        onClick = { vm.play(tile) },
-                        onLongClick = { menuOpen = true },
-                    )
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        if (Shortcuts.isSupported(context)) {
-                            DropdownMenuItem(
-                                text = { Text("Ajouter à l'écran d'accueil") },
-                                leadingIcon = { Icon(Icons.Filled.AddToHomeScreen, null) },
-                                onClick = {
-                                    menuOpen = false
-                                    scope.launch {
-                                        if (!Shortcuts.pin(context, tile)) {
-                                            vm.toast("Le lanceur ne permet pas d'ajouter ce raccourci.")
+            items(tiles, key = { it.id }) { tile ->
+                ReorderableItem(reorderState, key = tile.id) { isDragging ->
+                    Box {
+                        TileCard(
+                            tile = tile,
+                            columns = config.columns,
+                            playing = playerState.hasMedia && vm.lastTileId == tile.id,
+                            onClick = { vm.play(tile) },
+                            modifier = Modifier
+                                .longPressDraggableHandle(
+                                    onDragStarted = {
+                                        movedDuringDrag = false
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    },
+                                    onDragStopped = {
+                                        if (movedDuringDrag) vm.setTileOrder(tiles) else menuTileId = tile.id
+                                    },
+                                )
+                                .scale(if (isDragging) 1.08f else 1f),
+                        )
+                        DropdownMenu(expanded = menuTileId == tile.id, onDismissRequest = { menuTileId = null }) {
+                            if (Shortcuts.isSupported(context)) {
+                                DropdownMenuItem(
+                                    text = { Text("Ajouter à l'écran d'accueil") },
+                                    leadingIcon = { Icon(Icons.Filled.AddToHomeScreen, null) },
+                                    onClick = {
+                                        menuTileId = null
+                                        scope.launch {
+                                            if (!Shortcuts.pin(context, tile)) {
+                                                vm.toast("Le lanceur ne permet pas d'ajouter ce raccourci.")
+                                            }
                                         }
-                                    }
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Modifier") },
+                                leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                                onClick = {
+                                    menuTileId = null
+                                    vm.navigate(Screen.Settings)
+                                    vm.editTile(tile)
                                 },
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("Modifier") },
-                            leadingIcon = { Icon(Icons.Filled.Edit, null) },
-                            onClick = {
-                                menuOpen = false
-                                vm.navigate(Screen.Settings)
-                                vm.editTile(tile)
-                            },
-                        )
                     }
                 }
             }

@@ -64,7 +64,7 @@ class PlaybackService : MediaSessionService() {
         val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
 
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(LiveTimeshift.Source.Factory(dataSourceFactory)))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -129,8 +129,12 @@ class PlaybackService : MediaSessionService() {
         }
         player.pause()
 
-        val skipAds = runCatching { ConfigRepository.get(this).load().skipAds }.getOrDefault(true)
-        val result = PlaylistBuilder.build(tile, skipAds)
+        val config = runCatching { ConfigRepository.get(this).load() }.getOrNull()
+        val options = PlaylistBuilder.Options(
+            skipAds = config?.skipAds ?: true,
+            liveRewindMinutes = config?.liveRewindMinutes ?: 15,
+        )
+        val result = PlaylistBuilder.build(tile, options)
         if (result.messages.isNotEmpty()) {
             AppMessages.show(this, result.messages.joinToString("\n"))
         }

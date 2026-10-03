@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,8 +86,6 @@ import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.PodcastSearch
 import com.cgexcel.radioclic.net.RadioSearch
 import com.cgexcel.radioclic.net.toUserMessage
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -103,6 +103,8 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
     var podcastError by remember { mutableStateOf<String?>(null) }
     var radioError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    /** Case « Radio en direct » : décochée, on cherche des émissions ; cochée, des radios. */
+    var liveMode by rememberSaveable { mutableStateOf(false) }
     var chosenPodcast by remember { mutableStateOf<ITunesPodcast?>(null) }
     var chosenRadio by remember { mutableStateOf<RadioStation?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -114,6 +116,7 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
     fun pickStation(station: PopularStation) {
         val url = station.streamUrl
         if (url != null) {
+            // Le logo est ajouté juste après la création de la tuile (voir fillMissingLogos).
             vm.addFromSearch(PlayItem.Live(title = station.name, streamUrl = url), station.color)
             return
         }
@@ -150,23 +153,30 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
         delay(700)
         submitted = query.trim()
     }
-    LaunchedEffect(submitted) {
+    LaunchedEffect(submitted, liveMode) {
         val term = submitted
         if (term.isEmpty()) return@LaunchedEffect
         loading = true
         podcastError = null
         radioError = null
-        coroutineScope {
-            val p = async { runCatching { PodcastSearch.search(term) } }
-            val r = async { runCatching { RadioSearch.search(term) } }
-            p.await().onSuccess { podcasts = it }.onFailure {
-                podcasts = emptyList()
-                podcastError = it.toUserMessage()
-            }
-            r.await().onSuccess { radios = it.take(8) }.onFailure {
-                radios = emptyList()
-                radioError = it.toUserMessage()
-            }
+        if (liveMode) {
+            podcasts = emptyList()
+            runCatching { RadioSearch.search(term) }
+                .onSuccess { found ->
+                    radios = found.distinctBy { it.name.trim().lowercase() }.take(30)
+                }
+                .onFailure {
+                    radios = emptyList()
+                    radioError = it.toUserMessage()
+                }
+        } else {
+            radios = emptyList()
+            runCatching { PodcastSearch.search(term) }
+                .onSuccess { podcasts = it }
+                .onFailure {
+                    podcasts = emptyList()
+                    podcastError = it.toUserMessage()
+                }
         }
         loading = false
     }
@@ -214,9 +224,25 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                 }),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp)
                     .focusRequester(focus),
             )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = liveMode, onValueChange = { liveMode = it }, role = Role.Checkbox)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = liveMode, onCheckedChange = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Radio en direct", style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (liveMode) "(stations qui diffusent en ce moment)" else "(sinon : émissions enregistrées)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
 
             Box(Modifier.fillMaxSize()) {
                 when {
@@ -229,36 +255,43 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                         busyStation = busyStation,
                     )
                     else -> LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                        item {
-                            Section("Émissions — le dernier épisode est lu automatiquement", Icons.Filled.Podcasts)
-                        }
-                        when {
-                            podcastError != null -> item { Hint("Recherche d'émissions impossible : $podcastError") }
-                            podcasts.isEmpty() && !loading -> item { Hint("Aucune émission trouvée. Essayez d'autres mots.") }
-                        }
-                        items(podcasts, key = { "p" + it.collectionId + it.feedUrl }) { podcast ->
-                            ResultLine(
-                                image = podcast.artwork,
-                                icon = Icons.Filled.Podcasts,
-                                title = podcast.name,
-                                subtitle = podcast.artistName.orEmpty(),
-                                onClick = { keyboard?.hide(); chosenPodcast = podcast },
-                            )
-                        }
-                        item { Section("Radios en direct", Icons.Filled.Radio) }
-                        when {
-                            radioError != null -> item { Hint("Recherche de radios impossible : $radioError") }
-                            radios.isEmpty() && !loading -> item { Hint("Aucune radio trouvée.") }
-                        }
-                        items(radios, key = { "r" + it.uuid + it.streamUrl }) { station ->
-                            ResultLine(
-                                image = station.favicon.takeIf { it.isNotBlank() },
-                                icon = Icons.Filled.Radio,
-                                title = station.name.trim(),
-                                subtitle = listOf(station.country, station.codec)
-                                    .filter { it.isNotBlank() }.joinToString(" · "),
-                                onClick = { keyboard?.hide(); chosenRadio = station },
-                            )
+                        if (liveMode) {
+                            item { Section("Radios en direct", Icons.Filled.Radio) }
+                            when {
+                                radioError != null -> item { Hint("Recherche de radios impossible : $radioError") }
+                                radios.isEmpty() && !loading -> item {
+                                    Hint("Aucune radio en direct trouvée. Décochez « Radio en direct » pour chercher une émission.")
+                                }
+                            }
+                            items(radios, key = { "r" + it.uuid + it.streamUrl }) { station ->
+                                ResultLine(
+                                    image = station.favicon.takeIf { it.isNotBlank() },
+                                    icon = Icons.Filled.Radio,
+                                    title = station.name.trim(),
+                                    subtitle = listOf("En direct", station.country, station.codec)
+                                        .filter { it.isNotBlank() }.joinToString(" · "),
+                                    onClick = { keyboard?.hide(); chosenRadio = station },
+                                )
+                            }
+                        } else {
+                            item {
+                                Section("Émissions — le dernier épisode est lu automatiquement", Icons.Filled.Podcasts)
+                            }
+                            when {
+                                podcastError != null -> item { Hint("Recherche d'émissions impossible : $podcastError") }
+                                podcasts.isEmpty() && !loading -> item {
+                                    Hint("Aucune émission trouvée. Pour une radio en direct, cochez « Radio en direct ».")
+                                }
+                            }
+                            items(podcasts, key = { "p" + it.collectionId + it.feedUrl }) { podcast ->
+                                ResultLine(
+                                    image = podcast.artwork,
+                                    icon = Icons.Filled.Podcasts,
+                                    title = podcast.name,
+                                    subtitle = podcast.artistName.orEmpty(),
+                                    onClick = { keyboard?.hide(); chosenPodcast = podcast },
+                                )
+                            }
                         }
                         if (loading) {
                             item {

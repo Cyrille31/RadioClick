@@ -93,6 +93,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
     implementation(libs.reorderable)
 
     testImplementation(libs.junit)

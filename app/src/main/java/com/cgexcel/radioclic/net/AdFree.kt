@@ -34,9 +34,31 @@ object AdFree {
         return MEDIA_BASE + file
     }
 
-    private suspend fun exists(url: String): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Directs Radio France : les flux « icecast » / « direct » peuvent commencer par une
+     * publicité ; le flux HLS officiel (celui du site radiofrance.fr) n'en insère pas.
+     */
+    suspend fun resolveLive(streamUrl: String): String {
+        val hls = liveHlsUrl(streamUrl) ?: return streamUrl
+        return if (exists(hls, head = false)) hls else streamUrl
+    }
+
+    private val liveFile = Regex("^/(?:live/)?([a-z0-9]+)-(?:hifi|midfi|lofi)\\.(?:aac|mp3)$")
+
+    /** Flux HLS sans publicité équivalent à un direct Radio France, sinon null. */
+    fun liveHlsUrl(streamUrl: String): String? {
+        val url = streamUrl.toHttpUrlOrNull() ?: return null
+        val radioFrance = url.host == "icecast.radiofrance.fr" ||
+            (url.host.startsWith("direct.") && url.host.endsWith(".fr") && url.encodedPath.startsWith("/live/"))
+        if (!radioFrance) return null
+        val station = liveFile.find(url.encodedPath)?.groupValues?.get(1) ?: return null
+        return "https://stream.radiofrance.fr/$station/${station}_hifi.m3u8?id=radiofrance"
+    }
+
+    private suspend fun exists(url: String, head: Boolean = true): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            Http.client.newCall(Request.Builder().url(url).head().build()).execute().use { it.isSuccessful }
+            val request = Request.Builder().url(url).apply { if (head) head() }.build()
+            Http.client.newCall(request).execute().use { it.isSuccessful }
         }.getOrDefault(false)
     }
 }

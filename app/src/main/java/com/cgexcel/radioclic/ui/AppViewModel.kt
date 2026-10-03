@@ -17,6 +17,7 @@ import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.model.TilePalette
 import com.cgexcel.radioclic.model.newId
+import com.cgexcel.radioclic.net.Logos
 import com.cgexcel.radioclic.net.toUserMessage
 import com.cgexcel.radioclic.playback.PlayerConnection
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,8 +80,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // --- Disposition --------------------------------------------------------
 
     init {
-        viewModelScope.launch { repository.load() }
+        viewModelScope.launch {
+            repository.load()
+            fillMissingLogos()
+        }
     }
+
+    private val logoAttempts = mutableSetOf<String>()
+
+    /**
+     * Donne un logo aux radios en direct qui n'en ont pas, ou dont l'image ne
+     * s'affiche pas (adresse cassée, format refusé…).
+     */
+    private fun fillMissingLogos() = viewModelScope.launch {
+        val app = getApplication<Application>()
+        val lives = repository.current().tiles.flatMap { it.items }
+            .filterIsInstance<PlayItem.Live>()
+            .filter { it.streamUrl.isNotBlank() && logoAttempts.add(it.id) }
+        for (live in lives) {
+            val current = live.imageUrl?.takeIf { it.isNotBlank() }
+            if (current != null && runCatching { Logos.works(app, current) }.getOrDefault(false)) continue
+            val logo = runCatching { Logos.find(app, live.streamUrl, live.title) }.getOrNull() ?: continue
+            repository.update { cfg ->
+                cfg.copy(
+                    tiles = cfg.tiles.map { tile ->
+                        tile.copy(
+                            items = tile.items.map { item ->
+                                if (item is PlayItem.Live && item.id == live.id) item.copy(imageUrl = logo) else item
+                            },
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    fun setSeekSeconds(seconds: Int) = repository.update { it.copy(seekSeconds = seconds) }
+
+    fun setLiveRewindMinutes(minutes: Int) = repository.update { it.copy(liveRewindMinutes = minutes) }
 
     fun setSkipAds(skip: Boolean) = repository.update { it.copy(skipAds = skip) }
 
@@ -133,6 +170,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             AddMode.NewTile -> {
                 val tile = Tile(title = item.title, color = color ?: nextColor(), items = listOf(item))
                 repository.update { it.copy(tiles = it.tiles + tile) }
+                fillMissingLogos()
                 backStack.clear()
                 backStack.add(Screen.Home)
                 toast(
@@ -206,6 +244,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         Shortcuts.refresh(getApplication(), tile)
+        fillMissingLogos()
         tileDraft = null
         tileDraftOriginal = null
         back()
