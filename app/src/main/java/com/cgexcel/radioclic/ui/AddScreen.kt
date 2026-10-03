@@ -103,6 +103,7 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
     var podcastError by remember { mutableStateOf<String?>(null) }
     var radioError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var allRadios by remember { mutableStateOf(false) }
     var chosenPodcast by remember { mutableStateOf<ITunesPodcast?>(null) }
     var chosenRadio by remember { mutableStateOf<RadioStation?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -114,6 +115,7 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
     fun pickStation(station: PopularStation) {
         val url = station.streamUrl
         if (url != null) {
+            // Le logo est ajouté juste après la création de la tuile (voir fillMissingLogos).
             vm.addFromSearch(PlayItem.Live(title = station.name, streamUrl = url), station.color)
             return
         }
@@ -163,7 +165,7 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                 podcasts = emptyList()
                 podcastError = it.toUserMessage()
             }
-            r.await().onSuccess { radios = it.take(8) }.onFailure {
+            r.await().onSuccess { found -> radios = found.distinctBy { it.name.trim().lowercase() }.take(20); allRadios = false }.onFailure {
                 radios = emptyList()
                 radioError = it.toUserMessage()
             }
@@ -229,8 +231,32 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                         busyStation = busyStation,
                     )
                     else -> LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                        // Radios en direct d'abord : peu nombreuses, sinon noyées sous les émissions.
+                        item { Section("Radios en direct", Icons.Filled.Radio) }
+                        when {
+                            radioError != null -> item { Hint("Recherche de radios impossible : $radioError") }
+                            radios.isEmpty() && !loading -> item { Hint("Aucune radio en direct trouvée.") }
+                        }
+                        val shownRadios = if (allRadios) radios else radios.take(4)
+                        items(shownRadios, key = { "r" + it.uuid + it.streamUrl }) { station ->
+                            ResultLine(
+                                image = station.favicon.takeIf { it.isNotBlank() },
+                                icon = Icons.Filled.Radio,
+                                title = station.name.trim(),
+                                subtitle = listOf("En direct", station.country, station.codec)
+                                    .filter { it.isNotBlank() }.joinToString(" · "),
+                                onClick = { keyboard?.hide(); chosenRadio = station },
+                            )
+                        }
+                        if (!allRadios && radios.size > 4) {
+                            item {
+                                TextButton(onClick = { allRadios = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                    Text("Voir les ${radios.size} radios")
+                                }
+                            }
+                        }
                         item {
-                            Section("Émissions — le dernier épisode est lu automatiquement", Icons.Filled.Podcasts)
+                            Section("Émissions enregistrées — le dernier épisode est lu automatiquement", Icons.Filled.Podcasts)
                         }
                         when {
                             podcastError != null -> item { Hint("Recherche d'émissions impossible : $podcastError") }
@@ -243,21 +269,6 @@ fun AddScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
                                 title = podcast.name,
                                 subtitle = podcast.artistName.orEmpty(),
                                 onClick = { keyboard?.hide(); chosenPodcast = podcast },
-                            )
-                        }
-                        item { Section("Radios en direct", Icons.Filled.Radio) }
-                        when {
-                            radioError != null -> item { Hint("Recherche de radios impossible : $radioError") }
-                            radios.isEmpty() && !loading -> item { Hint("Aucune radio trouvée.") }
-                        }
-                        items(radios, key = { "r" + it.uuid + it.streamUrl }) { station ->
-                            ResultLine(
-                                image = station.favicon.takeIf { it.isNotBlank() },
-                                icon = Icons.Filled.Radio,
-                                title = station.name.trim(),
-                                subtitle = listOf(station.country, station.codec)
-                                    .filter { it.isNotBlank() }.joinToString(" · "),
-                                onClick = { keyboard?.hide(); chosenRadio = station },
                             )
                         }
                         if (loading) {

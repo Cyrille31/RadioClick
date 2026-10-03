@@ -17,6 +17,7 @@ import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.model.TilePalette
 import com.cgexcel.radioclic.model.newId
+import com.cgexcel.radioclic.net.RadioSearch
 import com.cgexcel.radioclic.net.toUserMessage
 import com.cgexcel.radioclic.playback.PlayerConnection
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,7 +80,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // --- Disposition --------------------------------------------------------
 
     init {
-        viewModelScope.launch { repository.load() }
+        viewModelScope.launch {
+            repository.load()
+            fillMissingLogos()
+        }
+    }
+
+    private val logoAttempts = mutableSetOf<String>()
+
+    /** Ajoute le logo des radios en direct qui n'en ont pas (recherche dans Radio Browser). */
+    private fun fillMissingLogos() = viewModelScope.launch {
+        val missing = repository.current().tiles.flatMap { it.items }
+            .filterIsInstance<PlayItem.Live>()
+            .filter { it.imageUrl.isNullOrBlank() && it.streamUrl.isNotBlank() && logoAttempts.add(it.id) }
+        for (live in missing) {
+            val logo = runCatching { RadioSearch.findLogo(live.streamUrl, live.title) }.getOrNull() ?: continue
+            repository.update { cfg ->
+                cfg.copy(
+                    tiles = cfg.tiles.map { tile ->
+                        tile.copy(
+                            items = tile.items.map { item ->
+                                if (item is PlayItem.Live && item.id == live.id && item.imageUrl.isNullOrBlank()) {
+                                    item.copy(imageUrl = logo)
+                                } else {
+                                    item
+                                }
+                            },
+                        )
+                    },
+                )
+            }
+        }
     }
 
     fun setSkipAds(skip: Boolean) = repository.update { it.copy(skipAds = skip) }
@@ -133,6 +164,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             AddMode.NewTile -> {
                 val tile = Tile(title = item.title, color = color ?: nextColor(), items = listOf(item))
                 repository.update { it.copy(tiles = it.tiles + tile) }
+                fillMissingLogos()
                 backStack.clear()
                 backStack.add(Screen.Home)
                 toast(
@@ -206,6 +238,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         Shortcuts.refresh(getApplication(), tile)
+        fillMissingLogos()
         tileDraft = null
         tileDraftOriginal = null
         back()
