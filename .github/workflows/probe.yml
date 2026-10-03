@@ -10,19 +10,30 @@ jobs:
     steps:
       - run: |
           set +e
-          curl -sS -G "https://itunes.apple.com/search" --data-urlencode "term=journal france inter 8h" -d media=podcast -d entity=podcast -d country=FR -d limit=3 > s.json
-          python3 -c "
-          import json;d=json.load(open('s.json'))
-          for r in d['results']: print({k:r.get(k) for k in ['collectionId','collectionName','feedUrl','collectionViewUrl','releaseDate','trackCount']})
+          echo "== FYYD"
+          curl -sS -G "https://api.fyyd.de/0.2/search/podcast" --data-urlencode "term=journal 8h france inter" -d count=8 | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for r in d.get('data',[]): print(' -',r.get('title'),'|',r.get('author'),'|',r.get('xmlURL'),'|',r.get('lastpub'))
           "
-          id=$(python3 -c "import json;print([r for r in json.load(open('s.json'))['results'] if '08h00' in r['collectionName']][0]['collectionId'])")
-          echo "== LOOKUP $id"
-          curl -sS "https://itunes.apple.com/lookup?id=$id&entity=podcastEpisode&limit=4&country=FR&sort=recent" > l.json
-          python3 -c "
-          import json;d=json.load(open('l.json'))
-          for r in d['results']: print({k:r.get(k) for k in ['wrapperType','kind','trackName','releaseDate','episodeUrl','feedUrl','artworkUrl600']})
+          curl -sS -G "https://api.fyyd.de/0.2/search/podcast" --data-urlencode "title=journal de 08h00" -d count=8 | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for r in d.get('data',[]): print(' t',r.get('title'),'|',r.get('author'),'|',r.get('xmlURL'),'|',r.get('lastpub'))
           "
-          echo "== HEAD episode"
-          u=$(python3 -c "import json;print([r for r in json.load(open('l.json'))['results'] if r.get('episodeUrl')][0]['episodeUrl'])")
-          curl -sSIL "$u" | grep -i "^HTTP\|^content-type\|^location" | head
-          echo "== date"; date -u
+          echo "== GPODDER"
+          curl -sS -m 20 "https://gpodder.net/search.json?q=journal+08h00+france+inter" | python3 -c "
+          import json,sys
+          for r in json.load(sys.stdin)[:8]: print(' -',r.get('title'),'|',r.get('url'))
+          "
+          echo "== RADIOFRANCE PAGE"
+          curl -sSL -m 20 -A "Mozilla/5.0" "https://www.radiofrance.fr/franceinter/podcasts/journal-de-8h" -o rf.html; ls -la rf.html
+          grep -o 'https://radiofrance-podcast.net/[^"]*\.xml' rf.html | sort -u | head
+          grep -o 'rss_[0-9]*' rf.html | sort -u | head
+          grep -o '"https://[^"]*\.mp3[^"]*"' rf.html | head -3
+          echo "== RF RSS 10059"
+          curl -sSL -m 20 "https://radiofrance-podcast.net/podcast09/rss_10059.xml" | grep -o '<title>[^<]*\|<pubDate>[^<]*\|url="[^"]*"' | head -6
+          echo "== APPLE PAGE"
+          curl -sSL -m 20 -A "Mozilla/5.0" "https://podcasts.apple.com/fr/podcast/journal-de-08h00/id541446017" -o ap.html; ls -la ap.html
+          grep -o 'https://[^"]*\.mp3[^"]*' ap.html | head -3
+          grep -o 'https://[^"]*radiofrance[^"]*' ap.html | sort -u | head -5
