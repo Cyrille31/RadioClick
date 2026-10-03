@@ -207,7 +207,7 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                             onSelect = vm::setSeekSeconds,
                         )
                         ChoiceSetting(
-                            title = "Retour possible dans un direct Radio France",
+                            title = "Retour possible dans un direct",
                             values = listOf(0, 15, 30, 60),
                             selected = config.liveRewindMinutes,
                             label = { if (it == 0) "Non" else "$it min" },

@@ -107,8 +107,17 @@ fun MiniPlayer(state: PlayerUiState, player: PlayerConnection, seekSeconds: Int)
                 }
             }
 
-            val canSeek = state.isSeekable && state.durationMs > 0
-            if (canSeek) TimeBar(state, player)
+            val buffer = state.liveBuffer
+            val canSeek = buffer != null || (state.isSeekable && state.durationMs > 0)
+            if (canSeek) {
+                // Direct enregistré : la barre couvre la partie déjà reçue, le bout droit est le direct.
+                val shownState = if (buffer != null) {
+                    state.copy(isLive = true, durationMs = buffer.windowMs.coerceAtLeast(1), positionMs = buffer.positionMs)
+                } else {
+                    state
+                }
+                TimeBar(shownState, player)
+            }
 
             Row(
                 Modifier.fillMaxWidth(),
