@@ -11,19 +11,19 @@ jobs:
       - run: |
           set +e
           for s in franceinter fip; do
-            for v in "${s}_hifi.m3u8?id=radiofrance" "${s}.m3u8?id=radiofrance" "${s}_hifi.m3u8?id=radiofrance&dvr=1"; do
-              n=$(curl -sS -m 10 "https://stream.radiofrance.fr/$s/$v" | tee pl.txt | grep -c EXTINF); echo "$s $v -> $n segments ; $(grep -m1 TARGETDURATION pl.txt) $(grep -m1 'EXT-X-PLAYLIST-TYPE\|STREAM-INF' pl.txt)"
-            done
+          curl -sS "https://stream.radiofrance.fr/$s/${s}_hifi.m3u8?id=radiofrance" > pl.txt
+          cat pl.txt | head -12
+          seg=$(grep -m1 '\.ts' pl.txt)
+          python3 - "$seg" "$s" <<'PY'
+          import re,sys,urllib.request
+          seg,s=sys.argv[1],sys.argv[2]
+          m=re.match(r'(.*_)(\d+)_(\d+)(\.ts.*)',seg)
+          a,seq,ep,b=m.group(1),int(m.group(2)),int(m.group(3)),m.group(4)
+          for mins in [0,5,15,30,60,180]:
+              k=mins*15
+              u='https://stream.radiofrance.fr'+a+str(seq-k)+'_'+str(ep-4*k)+b
+              try:
+                  r=urllib.request.urlopen(urllib.request.Request(u,method='GET'),timeout=10); d=r.read(); print(s,mins,'min ->',r.status,len(d))
+              except Exception as e: print(s,mins,'min ->',e)
+          PY
           done
-          echo "== logos"
-          for t in "Radio Classique" "Radio Présence Toulouse" "Radio Presence"; do
-            curl -sS -G "https://de1.api.radio-browser.info/json/stations/search" --data-urlencode "name=$t" -d limit=4 -d hidebroken=true -d order=clickcount -d reverse=true | python3 -c "
-          import json,sys
-          for r in json.load(sys.stdin): print('  ',r['name'],'|',r['url_resolved'][:60],'| fav:',r['favicon'],'| home:',r['homepage'])" | tee -a st.txt
-          done
-          echo "== favicon reachability"
-          grep -o 'fav: [^ |]*' st.txt | cut -c6- | sort -u | while read u; do [ -n "$u" ] && echo "  $(curl -sS -o /dev/null -m 10 -w '%{http_code} %{content_type}' "$u") $u ; https: $(curl -sS -o /dev/null -m 10 -w '%{http_code}' "${u/http:/https:}")"; done
-          echo "== google s2"
-          for d in radioclassique.fr radiopresence.com; do curl -sS -m 10 -o f.png -w "  $d %{http_code} %{content_type} %{size_download}\n" "https://www.google.com/s2/favicons?domain=$d&sz=128"; file f.png; done
-          echo "== apple-touch-icon / og:image"
-          for h in https://www.radioclassique.fr/ https://www.radiopresence.com/; do curl -sSL -m 15 -A "Mozilla/5.0" "$h" | grep -io '<link[^>]*apple-touch-icon[^>]*>\|<meta[^>]*og:image[^>]*>\|<link[^>]*rel="icon"[^>]*>' | head -4; done
