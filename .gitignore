@@ -1,0 +1,33 @@
+# RadioClic — CGExcel — Cyrille Gindre — © 2026 — MIT + BAL 1.0
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Fichiers générés
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+output-metadata.json
+
+# Signature : ne jamais publier le keystore ni ses mots de passe
+*.jks
+*.keystore
+keystore.properties
+
+# Divers
+.DS_Store
+Thumbs.db
+*.log
