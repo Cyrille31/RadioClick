@@ -12,6 +12,7 @@ Site : https://cgexcel.wordpress.com/
 
 ## Fonctions
 
+- **Aucune adresse à connaître** : on tape ce qu'on veut écouter (« journal France Inter 8h », « revue de presse », « France Culture »…), on choisit dans la liste, la tuile est créée. À chaque appui, l'application retrouve elle-même **le dernier épisode publié** — même pour les émissions Radio France, qui ne publient pas de flux RSS dans l'annuaire (les épisodes sont alors lus depuis la fiche Apple Podcasts de l'émission).
 - **Grille de tuiles** plein écran (1 à 4 colonnes) : titre, couleur, image ou pochette du podcast.
 - **Un appui = lecture immédiate.** Les flux RSS sont résolus en parallèle, puis lus dans l'ordre.
 - **Mini-lecteur** : élément en cours, position (« 2 / 3 »), lecture/pause, précédent, suivant, stop.
@@ -19,7 +20,7 @@ Site : https://cgexcel.wordpress.com/
 - **Types d'éléments**
   - *Podcast (RSS)* : dernier épisode, ou « uniquement s'il est du jour » (sinon l'élément est sauté avec un message, par ex. « Journal de 8h pas encore en ligne »).
   - *Radio en direct* : URL de flux, avec durée maximale optionnelle avant l'élément suivant.
-- **Recherche sans URL** : podcasts via l'API iTunes Search (avec aperçu des derniers épisodes), radios via Radio Browser. La saisie manuelle d'une URL reste possible.
+- **Recherche unique** (bouton **+** de l'écran principal) : émissions via l'annuaire iTunes / Apple Podcasts (avec aperçu des derniers épisodes), radios via Radio Browser. La saisie manuelle d'une adresse reste possible en option « avancée ».
 - **Paramétrage** (⚙ en haut à droite) : colonnes, glisser-déposer des tuiles et des éléments, ajout, duplication, suppression (avec confirmation).
 - **Export / import** de la configuration en JSON (sauvegarde, changement de téléphone).
 - **Raccourcis** : appui long sur une tuile > « Ajouter à l'écran d'accueil ».
@@ -27,11 +28,12 @@ Site : https://cgexcel.wordpress.com/
 
 ## Utilisation rapide
 
-1. Ouvrir ⚙ **Paramétrage** > **Ajouter une tuile**.
-2. Donner un titre, choisir une couleur.
-3. **Podcast** > **Rechercher un podcast** (ex. « journal 8h France Inter ») > toucher le bon résultat > vérifier l'aperçu des épisodes > choisir « Uniquement s'il est du jour » si besoin > **Ajouter**.
-4. Ajouter d'autres éléments pour un enchaînement (ils se réordonnent avec la poignée ≡).
-5. **Enregistrer la tuile**, revenir à la grille, appuyer : c'est parti.
+1. Toucher **+** en haut de l'écran principal.
+2. Taper ce que vous voulez écouter, par exemple **journal France Inter 8h**.
+3. Toucher **Journal de 08h00 — France Inter** : les derniers épisodes s'affichent pour vérifier. Choisir « Seulement s'il est du jour » si besoin, puis **Créer la tuile**.
+4. C'est tout : chaque appui sur la tuile lit le journal le plus récent.
+
+Pour un enchaînement (ex. journal, puis revue de presse, puis une chronique) : ⚙ **Paramétrage** > toucher la tuile > **Ajouter une émission ou une radio**, autant de fois que voulu ; les éléments se réordonnent avec la poignée ≡. Couleur, titre et image se changent au même endroit.
 
 Une erreur (réseau coupé, flux vide, flux illisible) ne bloque pas l'enchaînement : l'élément est sauté et un court message l'indique.
 
@@ -75,6 +77,7 @@ Android Studio (ou JDK 17 + SDK Android) : `./gradlew assembleRelease` ou `./gra
 - minSdk 26, targetSdk 36. Paquet : `com.cgexcel.radioclic`.
 - Lecture : Media3 (ExoPlayer, HLS, `MediaSessionService`).
 - Réseau : OkHttp ; RSS analysé avec `XmlPullParser` ; JSON avec kotlinx.serialization.
+- Dernier épisode : flux RSS si disponible, sinon fiche Apple Podcasts de l'émission (bloc JSON `serialized-server-data` : titre, date, lien audio de chaque épisode récent).
 - Configuration : fichier JSON local (`config.json`, écriture atomique).
 - Permissions : Internet et état du réseau, notifications, service de premier plan (lecture média), maintien d'éveil pendant la lecture (écran éteint).
 
@@ -103,7 +106,7 @@ app/src/main/java/com/cgexcel/radioclic/
     {
       "id": "…", "title": "Matinale", "color": 4280170079, "imageUrl": null,
       "items": [
-        { "type": "podcast", "id": "…", "title": "Journal de 8h", "feedUrl": "https://…", "onlyToday": true },
+        { "type": "podcast", "id": "…", "title": "Journal de 08h00", "feedUrl": "", "appleId": 541446017, "onlyToday": true },
         { "type": "live", "id": "…", "title": "France Inter", "streamUrl": "https://…", "maxMinutes": 10 }
       ]
     }
