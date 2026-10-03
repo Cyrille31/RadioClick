@@ -1,0 +1,23 @@
+# Temporaire : sonde (sera supprimée)
+name: Sonde recherche
+on:
+  push:
+    branches: [ 'claude/**' ]
+    paths: [ '.github/workflows/probe.yml' ]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set +e
+          for s in franceinter franceinfo franceculture francemusique fip mouv fbtoulouse fbprovence francemusiquelajazz fipjazz; do
+            u="https://stream.radiofrance.fr/$s/${s}_hifi.m3u8?id=radiofrance"
+            code=$(curl -sS -o pl.m3u8 -m 10 -w '%{http_code}' "$u")
+            echo "$s $code $(head -c 300 pl.m3u8 | tr '\n' ' ' | cut -c1-200)"
+          done
+          echo "== variante sans _hifi"
+          curl -sS -m 10 -o /dev/null -w '%{http_code}\n' "https://stream.radiofrance.fr/franceinter/franceinter.m3u8?id=radiofrance"
+          echo "== sous-playlist"
+          curl -sS -m 10 "https://stream.radiofrance.fr/franceinter/franceinter_hifi.m3u8?id=radiofrance" | head -20
+          echo "== icecast redirect headers"
+          curl -sS -m 5 -D - -o /dev/null "https://icecast.radiofrance.fr/franceinter-hifi.aac" | head -20
