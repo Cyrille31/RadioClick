@@ -20,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +79,9 @@ fun AboutScreen(vm: AppViewModel) {
             }
             Text("RadioClic", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = { vm.checkForUpdate(manual = true) }, enabled = !vm.updateBusy) {
+                Text(if (vm.updateBusy) "Recherche en cours…" else "Rechercher une mise à jour")
+            }
             HorizontalDivider()
             Text("CGExcel", style = MaterialTheme.typography.titleMedium)
             Text("Cyrille Gindre — © 2026", style = MaterialTheme.typography.bodyLarge)

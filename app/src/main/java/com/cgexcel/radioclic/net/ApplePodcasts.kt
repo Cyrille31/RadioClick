@@ -3,6 +3,8 @@
  */
 package com.cgexcel.radioclic.net
 
+import android.content.Context
+import android.content.SharedPreferences
 import com.cgexcel.radioclic.model.Episode
 import com.cgexcel.radioclic.model.Feed
 import kotlinx.serialization.json.Json
@@ -95,8 +97,12 @@ object ApplePodcasts {
 /** Retrouve les épisodes d'un podcast, quelle que soit sa source. */
 object FeedResolver {
 
-    /** Flux RSS Radio France déjà retrouvés, par identifiant Apple. */
-    private val radioFranceFeeds = java.util.concurrent.ConcurrentHashMap<Long, String>()
+    /** Flux RSS Radio France déjà retrouvés, par identifiant Apple (conservés entre les lancements). */
+    private var store: SharedPreferences? = null
+
+    fun init(context: Context) {
+        store = context.applicationContext.getSharedPreferences("radiofrance_feeds", Context.MODE_PRIVATE)
+    }
 
     suspend fun fetch(feedUrl: String, appleId: Long?): Feed {
         if (feedUrl.startsWith("http://") || feedUrl.startsWith("https://")) {
@@ -108,20 +114,17 @@ object FeedResolver {
             }
         }
         val id = appleId ?: throw IOException("aucune source pour ce podcast")
-        radioFranceFeeds[id]?.let { known ->
+        // Flux déjà connu : une seule requête, légère.
+        store?.getString(id.toString(), null)?.let { known ->
             fetchRss(known)?.let { return it }
-            radioFranceFeeds.remove(id)
         }
         val apple = ApplePodcasts.fetch(id)
-        // Apple ne reprend les épisodes Radio France qu'avec retard (souvent plus d'une heure) :
-        // le flux RSS officiel, retrouvé d'après le nom des fichiers audio, est à jour bien plus tôt.
-        val rss = apple.episodes.firstNotNullOfOrNull { radioFranceFeedUrl(it.audioUrl) } ?: return apple
-        val feed = fetchRss(rss) ?: return apple
-        radioFranceFeeds[id] = rss
-        return feed.copy(
-            title = apple.title.takeIf { it != "Podcast" } ?: feed.title,
-            imageUrl = feed.imageUrl ?: apple.imageUrl,
-        )
+        // Apple reprend les épisodes Radio France avec retard : le flux RSS officiel de
+        // l'émission, retrouvé d'après l'adresse de ses épisodes, est à jour plus tôt.
+        val rss = radioFranceFeedUrl(apple.episodes.map { it.audioUrl }) ?: return apple
+        val feed = fetchRss(rss)?.takeIf { sameShow(apple, it) } ?: return apple
+        store?.edit()?.putString(id.toString(), rss)?.apply()
+        return feed
     }
 
     private suspend fun fetchRss(url: String): Feed? = try {
@@ -132,17 +135,28 @@ object FeedResolver {
         null
     }
 
-    private val radioFranceFile = Regex("^(\\d+)-\\d{2}\\.\\d{2}\\.\\d{4}-.+\\.(?:mp3|m4a|aac)$", RegexOption.IGNORE_CASE)
+    private val uuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
 
     /**
-     * Flux RSS officiel d'une émission Radio France d'après l'adresse d'un de ses épisodes :
-     * « …/21003-03.10.2026-ITEMA_….mp3 » → « https://radiofrance-podcast.net/podcast09/rss_21003.xml ».
+     * Flux RSS officiel d'une émission Radio France d'après les adresses de ses épisodes :
+     * « proxycast.radiofrance.fr/<diffuseur>/<émission>/<épisode>/fichier.mp3 »
+     * → « https://radiofrance-podcast.net/podcast09/podcast_<émission>.xml ».
+     * L'identifiant d'émission le plus fréquent l'emporte ; null si ce n'est pas Radio France.
      */
-    fun radioFranceFeedUrl(audioUrl: String): String? {
-        val url = audioUrl.toHttpUrlOrNull() ?: return null
-        if (!url.host.endsWith("radiofrance.fr") && !url.host.endsWith("radiofrance-podcast.net")) return null
-        val file = url.pathSegments.lastOrNull() ?: return null
-        val feedId = radioFranceFile.find(file)?.groupValues?.get(1) ?: return null
-        return "https://radiofrance-podcast.net/podcast09/rss_$feedId.xml"
+    fun radioFranceFeedUrl(audioUrls: List<String>): String? {
+        val show = audioUrls.mapNotNull { audio ->
+            val url = audio.toHttpUrlOrNull() ?: return@mapNotNull null
+            if (url.host != "proxycast.radiofrance.fr") return@mapNotNull null
+            url.pathSegments.takeIf { it.size >= 4 }?.get(1)?.takeIf { uuid.matches(it) }?.lowercase()
+        }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: return null
+        return "https://radiofrance-podcast.net/podcast09/podcast_$show.xml"
+    }
+
+    /** Vérifie que le flux trouvé est bien la même émission (même nom, ou épisodes en commun). */
+    fun sameShow(apple: Feed, rss: Feed): Boolean {
+        fun norm(text: String) = text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        if (norm(apple.title) == norm(rss.title)) return true
+        val titles = apple.episodes.map { norm(it.title) }.toSet()
+        return rss.episodes.any { norm(it.title) in titles }
     }
 }

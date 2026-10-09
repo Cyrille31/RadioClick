@@ -64,23 +64,44 @@ class AdFreeTest {
 }
 
 class RadioFranceFeedTest {
+    private val resolver = com.cgexcel.radioclic.net.FeedResolver
+
     @Test
-    fun episodeFileGivesOfficialFeed() {
-        val rss = "https://radiofrance-podcast.net/podcast09/rss_21003.xml"
-        assertEquals(
-            rss,
-            com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl(
-                "https://proxycast.radiofrance.fr/3509/7241/ea9f/21003-03.10.2026-ITEMA_24697040-22-059e.mp3",
-            ),
+    fun showIdentifierGivesOfficialFeed() {
+        val show = "6f03e972-cada-490c-a455-cb8223327109"
+        val urls = listOf(
+            "https://proxycast.radiofrance.fr/35099478-7c72-4f9e-a6de-1b928400e9e5/$show/296e3f12-df48-4080-96d1-c49e29b750c5/21713-08.10.2026-ITEMA_24703247-2026F8770S0281-NET_MFI_8FFE8F4F-22-d3b1.mp3",
+            "https://proxycast.radiofrance.fr/35099478-7c72-4f9e-a6de-1b928400e9e5/$show/86719677-3a59-40c3-a7c7-3975f6b2fabd/25655-07.10.2026-ITEMA_24702581.mp3",
         )
-        assertEquals(
-            rss,
-            com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl(
-                "https://media.radiofrance-podcast.net/podcast09/21003-03.10.2026-ITEMA_24697040-22-059e.mp3",
-            ),
+        assertEquals("https://radiofrance-podcast.net/podcast09/podcast_$show.xml", resolver.radioFranceFeedUrl(urls))
+        assertEquals(null, resolver.radioFranceFeedUrl(listOf("https://audio.audiomeans.fr/file/PcNCvtcnHj/fdb1e4ab.mp3")))
+        assertEquals(null, resolver.radioFranceFeedUrl(listOf("https://proxycast.radiofrance.fr/3509/7241/ea9f/21003-03.10.2026-ITEMA_24697040-22-059e.mp3")))
+    }
+
+    @Test
+    fun feedMustBeTheSameShow() {
+        fun feed(title: String, vararg episodes: String) = com.cgexcel.radioclic.model.Feed(
+            title, null, episodes.map { com.cgexcel.radioclic.model.Episode(title = it, audioUrl = "https://a/$it", pubDate = null, imageUrl = null) },
         )
-        assertEquals(null, com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl("https://audio.example.org/21003-03.10.2026-x.mp3"))
-        assertEquals(null, com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl("https://media.radiofrance-podcast.net/podcast09/episode.mp3"))
+        assertEquals(true, resolver.sameShow(feed("L'édito éco", "A"), feed("L’édito éco", "B")))
+        assertEquals(true, resolver.sameShow(feed("Podcast", "Carburants : un geste malin"), feed("Autre", "Carburants : un geste malin ")))
+        assertEquals(false, resolver.sameShow(feed("L'édito éco", "A"), feed("Vous avez moins de 5 minutes ?", "Retrouvez tous les épisodes")))
+    }
+}
+
+class UpdaterTest {
+    @Test
+    fun readsLatestRelease() {
+        val json = """
+            {"tag_name":"v1.0.31","body":"Correctifs",
+             "assets":[{"name":"notes.txt","browser_download_url":"https://github.com/x/notes.txt"},
+                       {"name":"RadioClic-1.0.31.apk","browser_download_url":"https://github.com/x/RadioClic-1.0.31.apk"}]}
+        """.trimIndent()
+        val release = com.cgexcel.radioclic.net.Updater.parse(json)!!
+        assertEquals(31, release.versionCode)
+        assertEquals("1.0.31", release.versionName)
+        assertEquals("https://github.com/x/RadioClic-1.0.31.apk", release.apkUrl)
+        assertEquals(null, com.cgexcel.radioclic.net.Updater.parse("""{"tag_name":"v1.0.32","assets":[]}"""))
     }
 }
 

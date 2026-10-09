@@ -19,7 +19,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # Écriture : publication des versions (releases) depuis la branche principale.
+  contents: write
 
 jobs:
   build:
@@ -72,3 +73,14 @@ jobs:
           name: RadioClic-1.0.${{ github.run_number }}
           path: dist/*.apk
           if-no-files-found: error
+
+      # L'application vérifie la dernière « release » pour proposer la mise à jour.
+      - name: Publication de la version
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v1.0.${GITHUB_RUN_NUMBER}" dist/*.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "RadioClic 1.0.${GITHUB_RUN_NUMBER}" \
+            --notes "$(git log -1 --pretty=%s)"
