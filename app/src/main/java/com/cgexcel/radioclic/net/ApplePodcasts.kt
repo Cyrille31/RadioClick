@@ -7,6 +7,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.cgexcel.radioclic.model.Episode
 import com.cgexcel.radioclic.model.Feed
+import com.cgexcel.radioclic.model.ITunesPodcast
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -152,9 +156,67 @@ object FeedResolver {
         return "https://radiofrance-podcast.net/podcast09/podcast_$show.xml"
     }
 
+    /**
+     * Comme [fetch], en y ajoutant les épisodes des podcasts « jumeaux » de l'émission :
+     * Radio France publie par exemple « L'édito éco » du lundi au jeudi et
+     * « L'édito éco VSD » du vendredi au dimanche. Le plus récent des deux est ainsi lu.
+     */
+    suspend fun fetchWithCompanions(feedUrl: String, appleId: Long?): Feed = coroutineScope {
+        val main = async { fetch(feedUrl, appleId) }
+        val others = if (appleId == null) emptyList() else companions(appleId).map { id ->
+            async { runCatching { fetch("", id) }.getOrNull() }
+        }
+        val feed = main.await()
+        val extra = others.awaitAll().filterNotNull().flatMap { it.episodes }
+        val all = feed.episodes + extra
+        if (extra.isEmpty() || all.any { it.pubDate == null }) feed
+        else feed.copy(episodes = all.sortedByDescending { it.pubDate })
+    }
+
+    private const val COMPANIONS_MAX_AGE_MS = 7L * 24 * 3600 * 1000
+
+    /** Identifiants Apple des podcasts jumeaux (mémorisés une semaine). */
+    private suspend fun companions(appleId: Long): List<Long> {
+        val key = "companions_$appleId"
+        val cached = store?.getString(key, null)?.split('|')
+        val cachedAt = cached?.getOrNull(0)?.toLongOrNull()
+        val cachedIds = cached?.getOrNull(1)?.split(',')?.mapNotNull { it.toLongOrNull() }.orEmpty()
+        if (cachedAt != null && System.currentTimeMillis() - cachedAt < COMPANIONS_MAX_AGE_MS) return cachedIds
+        return try {
+            val base = PodcastSearch.lookup(appleId) ?: return cachedIds
+            val ids = PodcastSearch.search("${base.name} ${base.artistName.orEmpty()}")
+                .filter { isCompanion(base, it) }
+                .map { it.collectionId }
+                .distinct()
+                .take(2)
+            store?.edit()?.putString(key, "${System.currentTimeMillis()}|${ids.joinToString(",")}")?.apply()
+            ids
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            cachedIds
+        }
+    }
+
+    /**
+     * Vrai si [other] est un jumeau de [base] : même éditeur, et un nom égal à celui
+     * de l'autre suivi d'un court complément (« L'édito éco » / « L'édito éco VSD »).
+     */
+    fun isCompanion(base: ITunesPodcast, other: ITunesPodcast): Boolean {
+        if (other.collectionId <= 0 || other.collectionId == base.collectionId) return false
+        if (norm(base.artistName.orEmpty()) != norm(other.artistName.orEmpty())) return false
+        val a = norm(base.name)
+        val b = norm(other.name)
+        if (a.isEmpty() || b.isEmpty()) return false
+        fun extends(short: String, long: String): Boolean =
+            long.startsWith("$short ") && long.removePrefix("$short ").split(' ').size <= 2
+        return extends(a, b) || extends(b, a)
+    }
+
+    private fun norm(text: String) = text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
     /** Vérifie que le flux trouvé est bien la même émission (même nom, ou épisodes en commun). */
     fun sameShow(apple: Feed, rss: Feed): Boolean {
-        fun norm(text: String) = text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
         if (norm(apple.title) == norm(rss.title)) return true
         val titles = apple.episodes.map { norm(it.title) }.toSet()
         return rss.episodes.any { norm(it.title) in titles }

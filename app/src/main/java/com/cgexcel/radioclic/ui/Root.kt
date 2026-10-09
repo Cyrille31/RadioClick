@@ -60,11 +60,11 @@ fun RadioClicRoot(vm: AppViewModel) {
     vm.pendingImport?.let { imported ->
         AlertDialog(
             onDismissRequest = vm::cancelImport,
-            title = { Text("Importer la configuration ?") },
+            title = { Text("Restaurer les tuiles ?") },
             text = {
                 Text(
                     "Le fichier contient ${imported.tiles.size} tuile(s). " +
-                        "La configuration actuelle sera entièrement remplacée.",
+                        "Les tuiles actuelles seront entièrement remplacées.",
                 )
             },
             confirmButton = { TextButton(onClick = vm::confirmImport) { Text("Remplacer") } },

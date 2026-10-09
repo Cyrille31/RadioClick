@@ -76,7 +76,7 @@ object PlaylistBuilder {
         skipAds: Boolean,
     ): Resolved {
         if (!item.hasSource) return Resolved.Skipped("« $label » sauté : émission non choisie")
-        val feed = FeedResolver.fetch(item.feedUrl, item.appleId)
+        val feed = FeedResolver.fetchWithCompanions(item.feedUrl, item.appleId)
         val episode = feed.episodes.firstOrNull()
             ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
         if (item.onlyToday && !isToday(episode.pubDate)) {
