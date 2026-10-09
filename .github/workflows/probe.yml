@@ -1,0 +1,11 @@
+name: Sonde réseau (temporaire)
+on:
+  push:
+    branches: [ 'claude/**' ]
+    paths: [ '.github/probe/**', '.github/workflows/probe.yml' ]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/probe/probe.py
