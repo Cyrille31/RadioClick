@@ -32,6 +32,11 @@ object Http {
         }
         .build()
 
+    /** Téléchargements longs (mise à jour de l'application). */
+    val downloadClient: OkHttpClient by lazy {
+        client.newBuilder().readTimeout(60, TimeUnit.SECONDS).callTimeout(5, TimeUnit.MINUTES).build()
+    }
+
     const val USER_AGENT = "RadioClic/${BuildConfig.VERSION_NAME} (Android; CGExcel)"
 
     /** Télécharge le contenu texte d'une URL (thread IO). */

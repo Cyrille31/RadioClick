@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.cgexcel.radioclic.BuildConfig
 import com.cgexcel.radioclic.playback.AppMessages
 import kotlinx.coroutines.flow.merge
 
@@ -68,6 +69,21 @@ fun RadioClicRoot(vm: AppViewModel) {
             },
             confirmButton = { TextButton(onClick = vm::confirmImport) { Text("Remplacer") } },
             dismissButton = { TextButton(onClick = vm::cancelImport) { Text("Annuler") } },
+        )
+    }
+
+    vm.availableUpdate?.let { release ->
+        AlertDialog(
+            onDismissRequest = vm::dismissUpdate,
+            title = { Text("Nouvelle version disponible") },
+            text = {
+                Text(
+                    "RadioClic ${release.versionName} est disponible (installée : ${BuildConfig.VERSION_NAME}).\n\n" +
+                        "La télécharger et l'installer ? Vos tuiles sont conservées.",
+                )
+            },
+            confirmButton = { TextButton(onClick = vm::installUpdate) { Text("Installer") } },
+            dismissButton = { TextButton(onClick = vm::dismissUpdate) { Text("Plus tard") } },
         )
     }
 }

@@ -7,9 +7,15 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
+import com.cgexcel.radioclic.net.FeedResolver
 import com.cgexcel.radioclic.net.Http
 
 class RadioClicApp : Application(), ImageLoaderFactory {
+
+    override fun onCreate() {
+        super.onCreate()
+        FeedResolver.init(this)
+    }
 
     /** Chargeur d'images (pochettes, logos de radios) partageant le client HTTP. */
     override fun newImageLoader(): ImageLoader =

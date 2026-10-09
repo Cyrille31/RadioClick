@@ -50,6 +50,11 @@ Le workflow `.github/workflows/build.yml` compile l'APK à chaque envoi sur `mai
 L'APK se télécharge depuis l'onglet **Actions** > dernière exécution > **Artifacts** > `RadioClic-1.0.N`.
 Le numéro de version augmente automatiquement à chaque compilation.
 
+Chaque compilation de la branche `main` est aussi publiée dans **Releases** (`v1.0.N`).
+L'application vérifie au lancement (et via **À propos > Rechercher une mise à jour**)
+si une version plus récente existe, et propose de la télécharger et de l'installer.
+Cela suppose une signature stable (ci-dessous), sinon Android refuse l'installation par-dessus.
+
 ### Signature stable (indispensable pour les mises à jour)
 
 Pour que chaque nouvelle version s'installe **par-dessus** la précédente sans désinstaller, l'APK doit toujours être signée avec la même clé.

@@ -17,7 +17,10 @@ import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.model.TilePalette
 import com.cgexcel.radioclic.model.newId
+import com.cgexcel.radioclic.BuildConfig
+import com.cgexcel.radioclic.net.Http
 import com.cgexcel.radioclic.net.Logos
+import com.cgexcel.radioclic.net.Updater
 import com.cgexcel.radioclic.net.toUserMessage
 import com.cgexcel.radioclic.playback.PlayerConnection
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -84,6 +87,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             repository.load()
             fillMissingLogos()
         }
+    }
+
+    // --- Mises à jour -------------------------------------------------------
+
+    /** Nouvelle version proposée à l'utilisateur (dialogue de confirmation). */
+    var availableUpdate by mutableStateOf<Updater.Release?>(null)
+        private set
+
+    /** Vrai pendant la recherche ou le téléchargement d'une mise à jour. */
+    var updateBusy by mutableStateOf(false)
+        private set
+
+    /** Cherche une version plus récente sur GitHub ; [manual] : signale aussi l'absence de nouveauté. */
+    fun checkForUpdate(manual: Boolean) {
+        if (updateBusy) return
+        val app = getApplication<Application>()
+        if (!manual && !Http.isOnline(app)) return
+        updateBusy = true
+        viewModelScope.launch {
+            try {
+                val release = Updater.newerRelease()
+                availableUpdate = release
+                if (release == null && manual) toast("RadioClic est à jour (version ${BuildConfig.VERSION_NAME}).")
+            } catch (e: Exception) {
+                if (manual) toast("Recherche de mise à jour impossible : ${e.toUserMessage()}")
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    fun dismissUpdate() {
+        availableUpdate = null
+    }
+
+    /** Télécharge la version proposée puis ouvre l'installateur d'Android. */
+    fun installUpdate() {
+        val release = availableUpdate ?: return
+        availableUpdate = null
+        updateBusy = true
+        val app = getApplication<Application>()
+        toast("Téléchargement de la version ${release.versionName}…")
+        viewModelScope.launch {
+            try {
+                val apk = Updater.download(app, release)
+                Updater.install(app, apk)
+            } catch (e: Exception) {
+                toast("Mise à jour impossible : ${e.toUserMessage()}")
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
+    init {
+        // Après la déclaration des états ci-dessus : recherche discrète au lancement.
+        checkForUpdate(manual = false)
     }
 
     private val logoAttempts = mutableSetOf<String>()
