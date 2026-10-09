@@ -406,7 +406,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun export(uri: Uri) = viewModelScope.launch {
         try {
             repository.exportTo(uri)
-            toast("Configuration exportée.")
+            toast("Tuiles sauvegardées.")
         } catch (e: Exception) {
             toast("Export impossible : ${e.toUserMessage()}")
         }

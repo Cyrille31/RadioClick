@@ -89,6 +89,23 @@ class RadioFranceFeedTest {
     }
 }
 
+class CompanionTest {
+    private fun podcast(id: Long, name: String, artist: String = "France Inter") =
+        com.cgexcel.radioclic.model.ITunesPodcast(collectionId = id, collectionName = name, artistName = artist)
+
+    @Test
+    fun weekendEditionIsACompanion() {
+        val resolver = com.cgexcel.radioclic.net.FeedResolver
+        val eco = podcast(115147336, "L'édito éco")
+        assertEquals(true, resolver.isCompanion(eco, podcast(6807051676, "L'édito éco VSD")))
+        assertEquals(true, resolver.isCompanion(podcast(6807051676, "L'édito éco VSD"), eco))
+        assertEquals(false, resolver.isCompanion(eco, eco))
+        assertEquals(false, resolver.isCompanion(eco, podcast(1, "L'édito éco VSD", "Radio Classique")))
+        assertEquals(false, resolver.isCompanion(eco, podcast(2, "L'édito politique VSD")))
+        assertEquals(false, resolver.isCompanion(eco, podcast(3, "L'édito éco de la semaine passée en revue")))
+    }
+}
+
 class UpdaterTest {
     @Test
     fun readsLatestRelease() {

@@ -31,6 +31,16 @@ object PodcastSearch {
         // Les émissions sans flux RSS public (Radio France…) restent jouables via Apple Podcasts.
         return response.results.filter { it.collectionId > 0 || !it.feedUrl.isNullOrBlank() }
     }
+
+    /** Fiche d'un podcast d'après son identifiant Apple ; null si inconnu. */
+    suspend fun lookup(appleId: Long): ITunesPodcast? {
+        val url = "https://itunes.apple.com/lookup".toHttpUrl().newBuilder()
+            .addQueryParameter("id", appleId.toString())
+            .addQueryParameter("country", "FR")
+            .build()
+        val response = apiJson.decodeFromString(ITunesResponse.serializer(), Http.getText(url.toString()))
+        return response.results.firstOrNull { it.collectionId == appleId }
+    }
 }
 
 /** Recherche de radios via l'API publique Radio Browser (radio-browser.info). */

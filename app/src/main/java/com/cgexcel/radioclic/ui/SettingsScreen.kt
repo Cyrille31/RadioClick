@@ -37,6 +37,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -213,6 +214,36 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                             label = { if (it == 0) "Non" else "$it min" },
                             onSelect = vm::setLiveRewindMinutes,
                         )
+                        Text(
+                            "Sauvegarde des tuiles",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                        Text(
+                            "Enregistre toutes vos tuiles dans un fichier (ex. Téléchargements), à restaurer après une réinstallation.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { exportLauncher.launch("radioclic-${LocalDate.now()}.json") },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
+                                Text("Sauvegarder", Modifier.padding(start = 6.dp))
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(Icons.Filled.FileDownload, null, Modifier.size(18.dp))
+                                Text("Restaurer", Modifier.padding(start = 6.dp))
+                            }
+                        }
                         Text(
                             if (tiles.isEmpty()) {
                                 "Ajoutez une première tuile avec le bouton en bas de l'écran."
