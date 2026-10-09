@@ -39,6 +39,8 @@ object Http {
         val request = Request.Builder().url(url).apply {
             if (userAgent != null) header("User-Agent", userAgent)
             header("Accept-Language", "fr-FR,fr;q=0.9")
+            // Toujours la dernière version : un relais pourrait servir une copie périmée du flux.
+            header("Cache-Control", "no-cache")
         }.build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Erreur HTTP ${response.code}")

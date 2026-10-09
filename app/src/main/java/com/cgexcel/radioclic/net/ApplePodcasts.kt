@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
 
 /**
@@ -93,6 +94,10 @@ object ApplePodcasts {
 
 /** Retrouve les épisodes d'un podcast, quelle que soit sa source. */
 object FeedResolver {
+
+    /** Flux RSS Radio France déjà retrouvés, par identifiant Apple. */
+    private val radioFranceFeeds = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
     suspend fun fetch(feedUrl: String, appleId: Long?): Feed {
         if (feedUrl.startsWith("http://") || feedUrl.startsWith("https://")) {
             try {
@@ -103,6 +108,41 @@ object FeedResolver {
             }
         }
         val id = appleId ?: throw IOException("aucune source pour ce podcast")
-        return ApplePodcasts.fetch(id)
+        radioFranceFeeds[id]?.let { known ->
+            fetchRss(known)?.let { return it }
+            radioFranceFeeds.remove(id)
+        }
+        val apple = ApplePodcasts.fetch(id)
+        // Apple ne reprend les épisodes Radio France qu'avec retard (souvent plus d'une heure) :
+        // le flux RSS officiel, retrouvé d'après le nom des fichiers audio, est à jour bien plus tôt.
+        val rss = apple.episodes.firstNotNullOfOrNull { radioFranceFeedUrl(it.audioUrl) } ?: return apple
+        val feed = fetchRss(rss) ?: return apple
+        radioFranceFeeds[id] = rss
+        return feed.copy(
+            title = apple.title.takeIf { it != "Podcast" } ?: feed.title,
+            imageUrl = feed.imageUrl ?: apple.imageUrl,
+        )
+    }
+
+    private suspend fun fetchRss(url: String): Feed? = try {
+        RssParser.fetch(url).takeIf { it.episodes.isNotEmpty() }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    private val radioFranceFile = Regex("^(\\d+)-\\d{2}\\.\\d{2}\\.\\d{4}-.+\\.(?:mp3|m4a|aac)$", RegexOption.IGNORE_CASE)
+
+    /**
+     * Flux RSS officiel d'une émission Radio France d'après l'adresse d'un de ses épisodes :
+     * « …/21003-03.10.2026-ITEMA_….mp3 » → « https://radiofrance-podcast.net/podcast09/rss_21003.xml ».
+     */
+    fun radioFranceFeedUrl(audioUrl: String): String? {
+        val url = audioUrl.toHttpUrlOrNull() ?: return null
+        if (!url.host.endsWith("radiofrance.fr") && !url.host.endsWith("radiofrance-podcast.net")) return null
+        val file = url.pathSegments.lastOrNull() ?: return null
+        val feedId = radioFranceFile.find(file)?.groupValues?.get(1) ?: return null
+        return "https://radiofrance-podcast.net/podcast09/rss_$feedId.xml"
     }
 }
