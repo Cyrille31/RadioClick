@@ -63,6 +63,27 @@ class AdFreeTest {
     }
 }
 
+class RadioFranceFeedTest {
+    @Test
+    fun episodeFileGivesOfficialFeed() {
+        val rss = "https://radiofrance-podcast.net/podcast09/rss_21003.xml"
+        assertEquals(
+            rss,
+            com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl(
+                "https://proxycast.radiofrance.fr/3509/7241/ea9f/21003-03.10.2026-ITEMA_24697040-22-059e.mp3",
+            ),
+        )
+        assertEquals(
+            rss,
+            com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl(
+                "https://media.radiofrance-podcast.net/podcast09/21003-03.10.2026-ITEMA_24697040-22-059e.mp3",
+            ),
+        )
+        assertEquals(null, com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl("https://audio.example.org/21003-03.10.2026-x.mp3"))
+        assertEquals(null, com.cgexcel.radioclic.net.FeedResolver.radioFranceFeedUrl("https://media.radiofrance-podcast.net/podcast09/episode.mp3"))
+    }
+}
+
 class AdFreeLiveTest {
     @Test
     fun radioFranceLiveUsesHls() {
