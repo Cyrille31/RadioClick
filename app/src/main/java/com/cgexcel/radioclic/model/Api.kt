@@ -49,6 +49,8 @@ data class Feed(
     val title: String,
     val imageUrl: String?,
     val episodes: List<Episode>,
+    /** Auteur déclaré par le flux (ex. « France Inter ») ; null si absent. */
+    val author: String? = null,
 )
 
 data class Episode(
@@ -57,4 +59,6 @@ data class Episode(
     /** Date de publication en millisecondes, ou null si absente ou illisible. */
     val pubDate: Long?,
     val imageUrl: String?,
+    /** Durée en secondes, ou null si inconnue. */
+    val durationSec: Int? = null,
 )
