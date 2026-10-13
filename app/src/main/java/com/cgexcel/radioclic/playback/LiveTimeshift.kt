@@ -31,6 +31,9 @@ object LiveTimeshift {
 
     private const val SCHEME = "rclive"
     private const val BACK_PARAM = "rcback"
+    private const val REPLAY_SCHEME = "rcreplay"
+    private const val FROM_PARAM = "rcfrom"
+    private const val TO_PARAM = "rcto"
 
     /** Vrai pour une liste HLS de direct Radio France. */
     fun isRadioFranceHls(url: String): Boolean {
@@ -41,6 +44,56 @@ object LiveTimeshift {
     /** Adresse interne lue par [Source], qui étend la fenêtre du direct de [minutes]. */
     fun wrap(hlsUrl: String, minutes: Int): String =
         Uri.parse(hlsUrl).buildUpon().scheme(SCHEME).appendQueryParameter(BACK_PARAM, minutes.toString()).build().toString()
+
+    /** Adresse interne d'un créneau passé du direct [station] (bornes en secondes Unix). */
+    fun replayUrl(station: String, fromSec: Long, toSec: Long): String =
+        "$REPLAY_SCHEME://stream.radiofrance.fr/$station/${station}_hifi.m3u8?id=radiofrance&$FROM_PARAM=$fromSec&$TO_PARAM=$toSec"
+
+    /**
+     * Liste de lecture du créneau [fromSec, toSec[ d'après la liste du direct : les segments
+     * sont numérotés régulièrement et nommés d'après leur heure de début (secondes Unix).
+     * Créneau terminé : liste complète (VOD) ; sinon liste qui s'allonge (EVENT).
+     */
+    fun replay(playlist: String, playlistUrl: String, fromSec: Long, toSec: Long): String {
+        val base = playlistUrl.toHttpUrlOrNull() ?: throw IOException("adresse invalide")
+        val lines = playlist.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val lastUri = lines.lastOrNull { !it.startsWith("#") } ?: throw IOException("direct vide")
+        val match = segmentName.find(absolute(base, lastUri)) ?: throw IOException("direct illisible")
+        val duration = lines.firstOrNull { it.startsWith("#EXTINF:") }
+            ?.substringAfter(':')?.substringBefore(',')?.toDoubleOrNull()
+            ?.takeIf { it > 0 } ?: throw IOException("direct illisible")
+        val (prefix, seqText, stampText, suffix) = match.destructured
+        val lastSeq = seqText.toLong()
+        val lastStamp = stampText.toLong()
+        val step = duration.roundToLong().coerceAtLeast(1)
+        if (fromSec > lastStamp) throw IOException("émission pas encore diffusée")
+
+        // Premier segment : celui qui contient fromSec.
+        val back = (lastStamp - fromSec + step - 1) / step
+        val firstSeq = lastSeq - back
+        val firstStamp = lastStamp - back * step
+        val complete = lastStamp + step >= toSec
+        val extinf = "#EXTINF:" + String.format(java.util.Locale.US, "%.3f", duration) + ","
+        val out = buildList {
+            add("#EXTM3U")
+            add("#EXT-X-VERSION:3")
+            add("#EXT-X-TARGETDURATION:" + kotlin.math.ceil(duration).toLong())
+            add("#EXT-X-MEDIA-SEQUENCE:$firstSeq")
+            add("#EXT-X-PLAYLIST-TYPE:" + if (complete) "VOD" else "EVENT")
+            add("#EXT-X-START:TIME-OFFSET=${fromSec - firstStamp},PRECISE=YES")
+            var seq = firstSeq
+            var stamp = firstStamp
+            while (seq <= lastSeq && stamp < toSec) {
+                add("#EXT-X-PROGRAM-DATE-TIME:" + DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(stamp)))
+                add(extinf)
+                add("$prefix${seq}_$stamp$suffix")
+                seq++
+                stamp += step
+            }
+            if (complete) add("#EXT-X-ENDLIST")
+        }
+        return out.joinToString("\n", postfix = "\n")
+    }
 
     private val segmentName = Regex("^(.*_)(\\d+)_(\\d+)(\\.(?:ts|aac|mp4|m4s)(?:\\?.*)?)$")
 
@@ -112,6 +165,7 @@ object LiveTimeshift {
 
         override fun open(dataSpec: DataSpec): Long {
             uri = dataSpec.uri
+            if (dataSpec.uri.scheme == REPLAY_SCHEME) return openReplay(dataSpec)
             if (dataSpec.uri.scheme != SCHEME) {
                 delegating = true
                 return upstream.open(dataSpec)
@@ -128,6 +182,22 @@ object LiveTimeshift {
                 response.body?.string() ?: throw IOException("Réponse vide")
             }
             val bytes = extend(text, real, minutes * 60).toByteArray(Charsets.UTF_8)
+            data = bytes
+            position = min(dataSpec.position.toInt(), bytes.size)
+            return (bytes.size - position).toLong()
+        }
+
+        private fun openReplay(dataSpec: DataSpec): Long {
+            delegating = false
+            val from = dataSpec.uri.getQueryParameter(FROM_PARAM)?.toLongOrNull() ?: throw IOException("créneau invalide")
+            val to = dataSpec.uri.getQueryParameter(TO_PARAM)?.toLongOrNull() ?: throw IOException("créneau invalide")
+            val real = dataSpec.uri.buildUpon().scheme("https").clearQuery()
+                .appendQueryParameter("id", "radiofrance").build().toString()
+            val text = Http.client.newCall(Request.Builder().url(real).build()).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("Erreur HTTP ${response.code}")
+                response.body?.string() ?: throw IOException("Réponse vide")
+            }
+            val bytes = replay(text, real, from, to).toByteArray(Charsets.UTF_8)
             data = bytes
             position = min(dataSpec.position.toInt(), bytes.size)
             return (bytes.size - position).toLong()

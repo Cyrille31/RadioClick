@@ -30,6 +30,7 @@ object RssParser {
 
         var feedTitle = ""
         var feedImage: String? = null
+        var feedAuthor: String? = null
         val episodes = mutableListOf<Episode>()
 
         var inItem = false
@@ -38,6 +39,7 @@ object RssParser {
         var itemAudio: String? = null
         var itemDate: Long? = null
         var itemImage: String? = null
+        var itemDuration: Int? = null
         var sawRss = false
 
         var event = parser.eventType
@@ -47,7 +49,7 @@ object RssParser {
                     "rss", "channel" -> sawRss = true
                     "item" -> {
                         inItem = true
-                        itemTitle = ""; itemAudio = null; itemDate = null; itemImage = null
+                        itemTitle = ""; itemAudio = null; itemDate = null; itemImage = null; itemDuration = null
                     }
                     "image" -> if (!inItem) inChannelImage = true
                     "itunes:image" -> {
@@ -75,6 +77,10 @@ object RssParser {
                         if (text.isNotBlank()) feedImage = feedImage ?: text
                     }
                     "pubDate", "dc:date" -> if (inItem) itemDate = parseDate(parser.safeText())
+                    "itunes:duration" -> if (inItem) itemDuration = parseDuration(parser.safeText())
+                    "itunes:author" -> if (!inItem && feedAuthor == null) {
+                        feedAuthor = parser.safeText().takeIf { it.isNotBlank() }
+                    }
                 }
                 XmlPullParser.END_TAG -> when (parser.name) {
                     "image" -> inChannelImage = false
@@ -86,6 +92,7 @@ object RssParser {
                                 audioUrl = it,
                                 pubDate = itemDate,
                                 imageUrl = itemImage,
+                                durationSec = itemDuration,
                             )
                         }
                     }
@@ -101,7 +108,7 @@ object RssParser {
         } else {
             episodes
         }
-        return Feed(title = feedTitle.ifBlank { "Podcast" }, imageUrl = feedImage, episodes = sorted)
+        return Feed(title = feedTitle.ifBlank { "Podcast" }, imageUrl = feedImage, episodes = sorted, author = feedAuthor)
     }
 
     private fun XmlPullParser.safeText(): String =
@@ -116,6 +123,14 @@ object RssParser {
         "d MMM yyyy HH:mm:ss zzz",
         "EEE, d MMM yyyy",
     )
+
+    /** Durée « HH:MM:SS », « MM:SS » ou en secondes ; null si illisible. */
+    fun parseDuration(raw: String): Int? {
+        val parts = raw.trim().split(':')
+        if (parts.isEmpty() || parts.size > 3) return null
+        val numbers = parts.map { it.trim().toDoubleOrNull() ?: return null }
+        return numbers.fold(0.0) { total, n -> total * 60 + n }.toInt().takeIf { it > 0 }
+    }
 
     /** Analyse une date RFC 822 (pubDate) ou ISO 8601 ; null si illisible. */
     fun parseDate(raw: String): Long? {

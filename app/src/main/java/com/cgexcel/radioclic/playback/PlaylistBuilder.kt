@@ -79,6 +79,10 @@ object PlaylistBuilder {
         val feed = FeedResolver.fetchWithCompanions(item.feedUrl, item.appleId)
         val episode = feed.episodes.firstOrNull()
             ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
+        // Épisode du jour pas encore en ligne, mais émission déjà diffusée : reprise dans le direct.
+        BroadcastReplay.plan(feed)?.let { plan ->
+            return Resolved.Ok(replayItem(tile, item, label, index, plan, item.imageUrl ?: feed.imageUrl))
+        }
         if (item.onlyToday && !isToday(episode.pubDate)) {
             return Resolved.Skipped("« $label » pas encore en ligne")
         }
@@ -100,6 +104,33 @@ object PlaylistBuilder {
                 .build(),
         )
     }
+
+    private fun replayItem(
+        tile: Tile,
+        item: PlayItem.Podcast,
+        label: String,
+        index: Int,
+        plan: BroadcastReplay.Plan,
+        image: String?,
+    ): MediaItem {
+        val start = Instant.ofEpochSecond(plan.startSec).atZone(ZoneId.systemDefault())
+        val metadata = MediaMetadata.Builder()
+            .setTitle(label)
+            .setArtist("Aujourd'hui ${timeFormat.format(start)} · repris du direct")
+            .setAlbumTitle(tile.title)
+            .setArtworkUri(image?.let(Uri::parse))
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
+            .build()
+        return MediaItem.Builder()
+            .setMediaId("${item.id}#$index")
+            .setUri(LiveTimeshift.replayUrl(plan.station, plan.startSec, plan.endSec))
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    private val timeFormat = DateTimeFormatter.ofPattern("HH'h'mm", Locale.FRENCH)
 
     private suspend fun resolveLive(
         tile: Tile,
