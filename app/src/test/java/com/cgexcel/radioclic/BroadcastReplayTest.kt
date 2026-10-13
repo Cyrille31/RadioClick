@@ -108,7 +108,7 @@ class BroadcastReplayTest {
         val out = LiveTimeshift.replay(live, url, 1791031300, 1791032000).lines()
         assert(out.contains("#EXT-X-PLAYLIST-TYPE:EVENT"))
         assert(out.none { it == "#EXT-X-ENDLIST" })
-        assert(out.last().endsWith("franceinter_aac_hifi_4_2355082_1791031344.ts?id=radiofrance"))
+        assert(out.last { it.isNotEmpty() }.endsWith("franceinter_aac_hifi_4_2355082_1791031344.ts?id=radiofrance"))
         assertEquals(12, out.count { it.startsWith("#EXTINF") })
     }
 }
