@@ -1,7 +1,9 @@
 # RadioClic — CGExcel — Cyrille Gindre — © 2026 — MIT + BAL 1.0
 #
-# Compile l'APK à chaque envoi et la publie comme artefact téléchargeable
-# (onglet « Actions » du dépôt > dernière exécution > « Artifacts »).
+# Compile l'APK à chaque envoi sur la branche principale, la publie comme artefact
+# (onglet « Actions » > dernière exécution > « Artifacts ») et comme version (« Releases »).
+# Les autres branches ne produisent pas d'APK : les pull requests passent seulement
+# les tests (tests.yml), pour que les numéros de version restent ceux de main.
 #
 # Signature stable : définir les secrets du dépôt (Settings > Secrets and variables > Actions)
 #   KEYSTORE_BASE64    keystore .jks encodé en base64
@@ -15,7 +17,7 @@ name: Compilation APK
 
 on:
   push:
-    branches: [ main, master, 'claude/**' ]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:

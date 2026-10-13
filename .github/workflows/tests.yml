@@ -1,0 +1,36 @@
+# RadioClic — CGExcel — Cyrille Gindre — © 2026 — MIT + BAL 1.0
+#
+# Vérification d'une pull request : compilation et tests unitaires, sans APK
+# ni numéro de version (ceux-ci ne sont produits que sur main, voir build.yml).
+
+name: Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Récupération du code
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilation et tests
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest
