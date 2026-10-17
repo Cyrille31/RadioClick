@@ -104,6 +104,16 @@ class BroadcastReplayTest {
     }
 
     @Test
+    fun leadAllowsGoingBackBeforeTheStart() {
+        // Même créneau avec 60 s d'avance : 15 segments de plus, lecture toujours lancée à 12h40:01.
+        val out = LiveTimeshift.replay(live, url, 1791031201, 1791031260, leadSec = 60).lines()
+        assertEquals("#EXT-X-MEDIA-SEQUENCE:2355031", out.first { it.startsWith("#EXT-X-MEDIA-SEQUENCE") })
+        assert(out.contains("#EXT-X-START:TIME-OFFSET=61,PRECISE=YES"))
+        assert(out.contains("#EXT-X-PROGRAM-DATE-TIME:2026-10-03T12:39:00Z"))
+        assertEquals(30, out.count { it.startsWith("#EXTINF") })
+    }
+
+    @Test
     fun ongoingSlotGrows() {
         val out = LiveTimeshift.replay(live, url, 1791031300, 1791032000).lines()
         assert(out.contains("#EXT-X-PLAYLIST-TYPE:EVENT"))
