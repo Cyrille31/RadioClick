@@ -103,6 +103,9 @@ class CompanionTest {
         assertEquals(false, resolver.isCompanion(eco, podcast(1, "L'édito éco VSD", "Radio Classique")))
         assertEquals(false, resolver.isCompanion(eco, podcast(2, "L'édito politique VSD")))
         assertEquals(false, resolver.isCompanion(eco, podcast(3, "L'édito éco de la semaine passée en revue")))
+        val journal = podcast(1875984950, "Le journal de 13h")
+        assertEquals(true, resolver.isCompanion(journal, podcast(1405970252, "Le journal de 13h du week-end")))
+        assertEquals(false, resolver.isCompanion(podcast(4, "Le journal de 7h"), podcast(1409254082, "Le journal de 7h30 du week-end")))
     }
 }
 
