@@ -177,7 +177,8 @@ object FeedResolver {
 
     /** Identifiants Apple des podcasts jumeaux (mémorisés une semaine). */
     private suspend fun companions(appleId: Long): List<Long> {
-        val key = "companions_$appleId"
+        // « v2 » : ignore les résultats mémorisés avant la prise en compte de « … du week-end ».
+        val key = "companions_v2_$appleId"
         val cached = store?.getString(key, null)?.split('|')
         val cachedAt = cached?.getOrNull(0)?.toLongOrNull()
         val cachedIds = cached?.getOrNull(1)?.split(',')?.mapNotNull { it.toLongOrNull() }.orEmpty()
@@ -200,7 +201,8 @@ object FeedResolver {
 
     /**
      * Vrai si [other] est un jumeau de [base] : même éditeur, et un nom égal à celui
-     * de l'autre suivi d'un court complément (« L'édito éco » / « L'édito éco VSD »).
+     * de l'autre suivi d'un court complément (« L'édito éco » / « L'édito éco VSD »,
+     * « Le journal de 13h » / « Le journal de 13h du week-end »).
      */
     fun isCompanion(base: ITunesPodcast, other: ITunesPodcast): Boolean {
         if (other.collectionId <= 0 || other.collectionId == base.collectionId) return false
@@ -209,7 +211,7 @@ object FeedResolver {
         val b = norm(other.name)
         if (a.isEmpty() || b.isEmpty()) return false
         fun extends(short: String, long: String): Boolean =
-            long.startsWith("$short ") && long.removePrefix("$short ").split(' ').size <= 2
+            long.startsWith("$short ") && long.removePrefix("$short ").split(' ').size <= 3
         return extends(a, b) || extends(b, a)
     }
 

@@ -55,6 +55,26 @@ class BroadcastReplayTest {
     }
 
     @Test
+    fun weekendUsesTheWeekendDuration() {
+        // Journal de 13h : 28 min en semaine, 19 min le week-end (podcast jumeau fusionné).
+        fun ep(date: String, minutes: Int) = Episode(
+            title = date, audioUrl = "https://a/$date.mp3",
+            pubDate = at("${date}T13:00:00+02:00").toEpochMilli(), imageUrl = null, durationSec = minutes * 60,
+        )
+        val feed = Feed(
+            title = "Le journal de 13h", imageUrl = null, author = "France Inter",
+            episodes = listOf(
+                ep("2026-10-16", 28), ep("2026-10-15", 32), ep("2026-10-14", 28), ep("2026-10-13", 30),
+                ep("2026-10-12", 29), ep("2026-10-11", 19), ep("2026-10-10", 20), ep("2026-10-09", 19),
+            ),
+        )
+        // Samedi 17 à 13h05 : épisode du jour pas encore publié.
+        val plan = BroadcastReplay.plan(feed, at("2026-10-17T13:05:00+02:00"))!!
+        assertEquals(at("2026-10-17T13:00:00+02:00").epochSecond, plan.startSec)
+        assertEquals(plan.startSec + 20 * 60 + 20, plan.endSec)
+    }
+
+    @Test
     fun noReplayWhenNotNeededOrNotPossible() {
         // Avant 8h : pas encore diffusé.
         assertNull(BroadcastReplay.plan(journal, at("2026-10-13T07:30:00+02:00")))

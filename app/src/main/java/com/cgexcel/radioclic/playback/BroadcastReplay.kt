@@ -67,12 +67,14 @@ object BroadcastReplay {
         if (lastFive.size < 3 || lastFive.any { abs(it.toLocalTime().toSecondOfDay() - slot) > SLOT_TOLERANCE_SEC }) return null
 
         // L'émission passe ce jour de la semaine (ex. pas le week-end pour une quotidienne en semaine).
-        val sameWeekday = recent.any {
+        val sameDay = recent.filter {
             Instant.ofEpochMilli(it.pubDate!!).atZone(paris).dayOfWeek == today.dayOfWeek
         }
-        if (!sameWeekday) return null
+        if (sameDay.isEmpty()) return null
 
-        val durations = recent.mapNotNull { it.durationSec }.filter { it > 0 }.sorted()
+        // Durée habituelle ce jour de la semaine (ex. journal plus court le week-end), sinon tous jours confondus.
+        val durations = (sameDay.mapNotNull { it.durationSec }.filter { it > 0 }
+            .ifEmpty { recent.mapNotNull { it.durationSec }.filter { it > 0 } }).sorted()
         if (durations.isEmpty()) return null
         val duration = durations[durations.size / 2]
 
