@@ -34,6 +34,10 @@ object LiveTimeshift {
     private const val REPLAY_SCHEME = "rcreplay"
     private const val FROM_PARAM = "rcfrom"
     private const val TO_PARAM = "rcto"
+    private const val LEAD_PARAM = "rclead"
+
+    /** Avance gardée avant le début d'un créneau, pour pouvoir reculer si l'émission a commencé plus tôt. */
+    const val REPLAY_LEAD_SEC = 5 * 60L
 
     /** Vrai pour une liste HLS de direct Radio France. */
     fun isRadioFranceHls(url: String): Boolean {
@@ -46,15 +50,18 @@ object LiveTimeshift {
         Uri.parse(hlsUrl).buildUpon().scheme(SCHEME).appendQueryParameter(BACK_PARAM, minutes.toString()).build().toString()
 
     /** Adresse interne d'un créneau passé du direct [station] (bornes en secondes Unix). */
-    fun replayUrl(station: String, fromSec: Long, toSec: Long): String =
-        "$REPLAY_SCHEME://stream.radiofrance.fr/$station/${station}_hifi.m3u8?id=radiofrance&$FROM_PARAM=$fromSec&$TO_PARAM=$toSec"
+    fun replayUrl(station: String, fromSec: Long, toSec: Long, leadSec: Long = REPLAY_LEAD_SEC): String =
+        "$REPLAY_SCHEME://stream.radiofrance.fr/$station/${station}_hifi.m3u8?id=radiofrance" +
+            "&$FROM_PARAM=$fromSec&$TO_PARAM=$toSec&$LEAD_PARAM=$leadSec"
 
     /**
      * Liste de lecture du créneau [fromSec, toSec[ d'après la liste du direct : les segments
      * sont numérotés régulièrement et nommés d'après leur heure de début (secondes Unix).
      * Créneau terminé : liste complète (VOD) ; sinon liste qui s'allonge (EVENT).
+     * La liste commence [leadSec] secondes plus tôt, mais la lecture démarre à [fromSec] :
+     * on peut ainsi reculer avant le début prévu.
      */
-    fun replay(playlist: String, playlistUrl: String, fromSec: Long, toSec: Long): String {
+    fun replay(playlist: String, playlistUrl: String, fromSec: Long, toSec: Long, leadSec: Long = 0): String {
         val base = playlistUrl.toHttpUrlOrNull() ?: throw IOException("adresse invalide")
         val lines = playlist.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val lastUri = lines.lastOrNull { !it.startsWith("#") } ?: throw IOException("direct vide")
@@ -68,8 +75,8 @@ object LiveTimeshift {
         val step = duration.roundToLong().coerceAtLeast(1)
         if (fromSec > lastStamp) throw IOException("émission pas encore diffusée")
 
-        // Premier segment : celui qui contient fromSec.
-        val back = (lastStamp - fromSec + step - 1) / step
+        // Premier segment : celui qui contient le début de l'avance (fromSec - leadSec).
+        val back = (lastStamp - (fromSec - leadSec.coerceAtLeast(0)) + step - 1) / step
         val firstSeq = lastSeq - back
         val firstStamp = lastStamp - back * step
         val complete = lastStamp + step >= toSec
@@ -191,13 +198,14 @@ object LiveTimeshift {
             delegating = false
             val from = dataSpec.uri.getQueryParameter(FROM_PARAM)?.toLongOrNull() ?: throw IOException("créneau invalide")
             val to = dataSpec.uri.getQueryParameter(TO_PARAM)?.toLongOrNull() ?: throw IOException("créneau invalide")
+            val lead = dataSpec.uri.getQueryParameter(LEAD_PARAM)?.toLongOrNull() ?: 0L
             val real = dataSpec.uri.buildUpon().scheme("https").clearQuery()
                 .appendQueryParameter("id", "radiofrance").build().toString()
             val text = Http.client.newCall(Request.Builder().url(real).build()).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("Erreur HTTP ${response.code}")
                 response.body?.string() ?: throw IOException("Réponse vide")
             }
-            val bytes = replay(text, real, from, to).toByteArray(Charsets.UTF_8)
+            val bytes = replay(text, real, from, to, lead).toByteArray(Charsets.UTF_8)
             data = bytes
             position = min(dataSpec.position.toInt(), bytes.size)
             return (bytes.size - position).toLong()
