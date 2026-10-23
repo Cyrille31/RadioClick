@@ -9,15 +9,31 @@ import android.net.NetworkCapabilities
 import com.cgexcel.radioclic.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
+
+/**
+ * Adresses IPv4 d'abord. Sur un réseau dont l'IPv6 ne répond pas, chaque adresse IPv6
+ * coûtait un délai de connexion complet avant de passer à l'IPv4 : les serveurs d'Apple
+ * (jusqu'à 5 adresses IPv6) dépassaient alors la limite de 30 s (émissions « timeout »,
+ * vignettes absentes). L'IPv6 reste essayée si l'IPv4 échoue.
+ */
+object Ipv4First : Dns {
+    override fun lookup(hostname: String): List<InetAddress> = order(Dns.SYSTEM.lookup(hostname))
+
+    fun order(addresses: List<InetAddress>): List<InetAddress> = addresses.sortedBy { it is Inet6Address }
+}
 
 /** Client HTTP partagé. */
 object Http {
     val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .dns(Ipv4First)
+        .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
