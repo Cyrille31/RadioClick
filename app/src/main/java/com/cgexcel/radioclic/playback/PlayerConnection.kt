@@ -42,6 +42,8 @@ data class PlayerUiState(
     val isSeekable: Boolean = false,
     /** Retard sur le direct choisi par l'utilisateur (ms) : 0, 15 s, 30 s… (plus le temps de pause). */
     val liveBehindMs: Long = 0,
+    /** Direct lu au fil de l'eau, qu'on peut faire reculer en passant sur son enregistrement. */
+    val canShiftLive: Boolean = false,
 )
 
 /** Connexion de l'interface au service de lecture (MediaController). */
@@ -134,6 +136,17 @@ class PlayerConnection(context: Context) {
     /** Avance (delta positif) ou recule dans l'épisode ou dans la fenêtre du direct. */
     fun seekBy(deltaMs: Long) {
         val c = controller ?: return
+        if (isTee(c)) {
+            // Direct au fil de l'eau : on y est déjà pour avancer ; pour reculer, le service bascule
+            // sur l'enregistrement.
+            if (deltaMs >= 0) return
+            liveBehindMs = currentBehind() - deltaMs
+            pausedAtMs = if (c.playWhenReady) null else System.currentTimeMillis()
+            val args = Bundle().apply { putLong(PlaybackService.KEY_BEHIND_MS, liveBehindMs) }
+            c.sendCustomCommand(SessionCommand(PlaybackService.CMD_LIVE_SHIFT, Bundle.EMPTY), args)
+            refresh()
+            return
+        }
         if (!c.isCurrentMediaItemSeekable) return
         if (isRealLive(c)) {
             // Direct : ni avant le début de la fenêtre, ni au-delà du direct.
@@ -192,13 +205,17 @@ class PlayerConnection(context: Context) {
         c.isCurrentMediaItemLive &&
             c.currentMediaItem?.mediaMetadata?.extras?.getBoolean(PlaylistBuilder.EXTRA_REPLAY) != true
 
+    /** Direct ordinaire lu au fil de l'eau (pas encore basculé sur son enregistrement). */
+    private fun isTee(c: MediaController): Boolean =
+        c.currentMediaItem?.mediaMetadata?.extras?.getString(PlaylistBuilder.EXTRA_BUFFER_URL) != null
+
     private fun currentBehind(): Long =
         liveBehindMs + (pausedAtMs?.let { System.currentTimeMillis() - it } ?: 0)
 
     /** Suit le retard sur le direct : remis à zéro à chaque nouveau direct, augmenté pendant les pauses. */
     private fun trackLive(c: MediaController) {
         val id = c.currentMediaItem?.mediaId
-        if (!isRealLive(c)) {
+        if (!isRealLive(c) && !isTee(c)) {
             liveMediaId = null
             return
         }
@@ -213,6 +230,7 @@ class PlayerConnection(context: Context) {
             liveBehindMs += now - pausedAtMs!!
             pausedAtMs = null
         }
+        if (isTee(c)) return
         val duration = c.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET && it > 0 } ?: return
         if (liveBehindMs == 0L && c.isPlaying) liveLagMs = (duration - c.currentPosition).coerceAtLeast(0)
     }
@@ -236,9 +254,10 @@ class PlayerConnection(context: Context) {
                 hasNext = c.hasNextMediaItem(),
                 positionMs = c.currentPosition.coerceAtLeast(0),
                 durationMs = c.duration.takeIf { d -> d != androidx.media3.common.C.TIME_UNSET && d > 0 } ?: 0,
-                isLive = isRealLive(c),
+                isLive = isRealLive(c) || isTee(c),
                 isSeekable = c.isCurrentMediaItemSeekable,
-                liveBehindMs = if (isRealLive(c)) currentBehind() else 0,
+                liveBehindMs = if (isRealLive(c) || isTee(c)) currentBehind() else 0,
+                canShiftLive = isTee(c),
             )
         }
     }

@@ -18,10 +18,12 @@ import kotlin.math.ceil
 /**
  * Retour en arrière dans les directs ordinaires (radios hors Radio France).
  *
- * Ces flux (MP3 / AAC continus) ne permettent pas de reculer. Pendant l'écoute,
- * on les enregistre donc en segments de 2 s dans le cache de l'application, en
- * ne gardant que les dernières minutes, et le lecteur lit une liste HLS locale
- * (adresses « rcbuf:// ») : il peut alors reculer jusqu'au début de
+ * Ces flux (MP3 / AAC continus) ne permettent pas de reculer. Une seule connexion
+ * les reçoit : chaque bloc reçu part aussitôt vers le lecteur (adresse « stream »,
+ * démarrage immédiat comme une radio ordinaire) et est en même temps enregistré en
+ * segments de 2 s dans le cache de l'application, en ne gardant que les dernières
+ * minutes. Pour reculer, le service bascule une fois sur la liste HLS locale de
+ * cet enregistrement (« playlist.m3u8 ») : on peut alors aller jusqu'au début de
  * l'enregistrement, sans jamais dépasser le direct.
  *
  * Un seul enregistrement à la fois ; il est arrêté et ses fichiers supprimés
@@ -36,6 +38,8 @@ object LiveBuffer {
     private const val MIN_SEGMENTS = 3
     /** Plafond d'espace disque, quelle que soit la durée demandée. */
     private const val MAX_BYTES = 80L * 1024 * 1024
+    /** Mémoire maximale en attente de lecture (lecteur en pause sur le direct). */
+    private const val MAX_TEE_BYTES = 8L * 1024 * 1024
 
     private var root: File? = null
 
@@ -77,15 +81,39 @@ object LiveBuffer {
         }.getOrNull()
     }
 
-    /** Adresse de la liste de lecture locale d'un flux enregistré. */
-    fun playlistUrl(streamUrl: String, minutes: Int): String =
-        Uri.Builder().scheme(SCHEME).authority("live").path("playlist.m3u8")
+    /** Adresse de la liste de lecture locale d'un flux enregistré (pour reculer). */
+    fun playlistUrl(streamUrl: String, minutes: Int): String = localUrl("playlist.m3u8", streamUrl, minutes)
+
+    /** Adresse du flux en temps réel, lu au fil de l'eau pendant l'enregistrement. */
+    fun teeUrl(streamUrl: String, minutes: Int): String = localUrl("stream", streamUrl, minutes)
+
+    private fun localUrl(path: String, streamUrl: String, minutes: Int): String =
+        Uri.Builder().scheme(SCHEME).authority("live").path(path)
             .appendQueryParameter("src", streamUrl)
             .appendQueryParameter("min", minutes.toString())
             .build().toString()
 
-    /** Vrai si l'adresse est une liste ou un segment de [LiveBuffer]. */
+    /** Vrai si l'adresse est une liste, un segment ou le flux en temps réel de [LiveBuffer]. */
     fun handles(uri: Uri): Boolean = uri.scheme == SCHEME
+
+    /** Vrai pour le flux en temps réel (lecture au fil de l'eau). */
+    fun isTee(uri: Uri): Boolean = uri.scheme == SCHEME && uri.path.orEmpty().endsWith("/stream")
+
+    /** Ouvre le flux en temps réel ; l'enregistrement démarre s'il ne tourne pas déjà. */
+    fun openTee(uri: Uri): Tee {
+        val src = uri.getQueryParameter("src") ?: throw IOException("flux inconnu")
+        val minutes = uri.getQueryParameter("min")?.toIntOrNull()?.coerceAtLeast(1) ?: 15
+        return synchronized(lock) {
+            val existing = current?.takeIf { it.src == src && it.isAlive }
+            val rec = existing ?: run {
+                current?.stop()
+                val dir = root ?: throw IOException("enregistrement indisponible")
+                Recording(src, minutes * 60.0, dir).also { current = it }
+            }
+            // Abonnement avant le démarrage : les premières secondes envoyées par le serveur sont lues aussi.
+            rec.subscribe().also { if (existing == null) rec.start() }
+        }
+    }
 
     /** Contenu demandé par le lecteur (liste de lecture ou segment) ; appelé hors du fil principal. */
     fun open(uri: Uri): ByteArray {
@@ -125,6 +153,75 @@ object LiveBuffer {
         return rec
     }
 
+    /**
+     * Lecture au fil de l'eau : les blocs reçus du réseau, dans l'ordre. En mémoire seulement,
+     * libérée à la fermeture ; au-delà de [MAX_TEE_BYTES] en attente (longue pause), la lecture
+     * s'interrompt plutôt que de remplir la mémoire.
+     */
+    class Tee internal constructor(private val onClose: (Tee) -> Unit) {
+        private val queue = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
+        private val queued = java.util.concurrent.atomic.AtomicLong()
+        @Volatile private var finished = false
+        @Volatile private var overflow = false
+        @Volatile private var error: IOException? = null
+        private var chunk: ByteArray? = null
+        private var pos = 0
+
+        internal fun offer(data: ByteArray, count: Int) {
+            if (finished || overflow) return
+            if (queued.get() + count > MAX_TEE_BYTES) {
+                overflow = true
+                queue.clear()
+                queued.set(0)
+                queue.offer(ByteArray(0))
+                return
+            }
+            queued.addAndGet(count.toLong())
+            queue.offer(data.copyOf(count))
+        }
+
+        internal fun finish() {
+            finished = true
+            queue.offer(ByteArray(0)) // réveille le lecteur
+        }
+
+        internal fun fail(e: IOException) {
+            error = e
+            finish()
+        }
+
+        /** Comme InputStream.read ; -1 en fin de flux (enregistrement arrêté). Bloquant. */
+        fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (length == 0) return 0
+            while (true) {
+                chunk?.let { c ->
+                    if (pos < c.size) {
+                        val n = minOf(length, c.size - pos)
+                        System.arraycopy(c, pos, buffer, offset, n)
+                        pos += n
+                        return n
+                    }
+                    chunk = null
+                }
+                if (overflow) throw IOException("lecture interrompue (pause trop longue)")
+                error?.let { throw it }
+                if (finished && queue.isEmpty()) return -1
+                val next = queue.poll(30, TimeUnit.SECONDS) ?: throw IOException("délai dépassé")
+                if (next.isEmpty()) continue
+                queued.addAndGet(-next.size.toLong())
+                chunk = next
+                pos = 0
+            }
+        }
+
+        fun close() {
+            finished = true
+            queue.clear()
+            chunk = null
+            onClose(this)
+        }
+    }
+
     private class Segment(val seq: Long, val file: File, val durationSec: Double, val discontinuity: Boolean)
 
     private class Recording(val src: String, val windowSec: Double, root: File) {
@@ -138,6 +235,9 @@ object LiveBuffer {
         @Volatile private var failure: IOException? = null
         @Volatile private var discontinuity = false
         private var call: okhttp3.Call? = null
+        private val tees = java.util.concurrent.CopyOnWriteArrayList<Tee>()
+
+        fun subscribe(): Tee = Tee { tees.remove(it) }.also { tees.add(it) }
         private val thread = Thread({ run() }, "RadioClic-LiveBuffer")
 
         val isAlive: Boolean get() = !stopped && failure == null
@@ -150,6 +250,8 @@ object LiveBuffer {
 
         fun stop() {
             stopped = true
+            tees.forEach { it.finish() }
+            tees.clear()
             synchronized(this) { call }?.cancel()
             synchronized(segments) { segments.clear() }
             dir.deleteRecursively()
@@ -182,6 +284,8 @@ object LiveBuffer {
                         while (!stopped) {
                             val n = input.read(buf)
                             if (n < 0) break
+                            // Une seule réception : vers le lecteur au fil de l'eau, et vers l'enregistrement.
+                            tees.forEach { it.offer(buf, n) }
                             splitter.feed(buf, n)
                         }
                     }
@@ -189,6 +293,7 @@ object LiveBuffer {
                     if (stopped) return
                     if (++attempts > 3 && synchronized(segments) { segments.isEmpty() }) {
                         failure = e
+                        tees.forEach { it.fail(e) }
                         return
                     }
                 }

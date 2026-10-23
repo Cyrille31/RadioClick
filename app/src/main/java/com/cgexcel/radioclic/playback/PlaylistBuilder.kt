@@ -33,6 +33,9 @@ object PlaylistBuilder {
     /** Clé des extras de métadonnées : durée maximale (ms) d'un direct. */
     const val EXTRA_MAX_DURATION_MS = "radioclic.maxDurationMs"
 
+    /** Clé des extras d'un direct lu au fil de l'eau : adresse de son enregistrement (pour reculer). */
+    const val EXTRA_BUFFER_URL = "radioclic.bufferUrl"
+
     /** Clés des extras d'un direct réparable : identifiant de l'élément et nom de la station. */
     const val EXTRA_LIVE_ITEM_ID = "radioclic.liveItemId"
     const val EXTRA_STATION_NAME = "radioclic.stationName"
@@ -181,15 +184,18 @@ object PlaylistBuilder {
         }
         val direct = if (hls == null) resolveStreamPlaylist(original) else null
         // Autres radios : flux MP3 / AAC enregistré pendant l'écoute pour pouvoir reculer.
-        val buffered = direct != null && rewind > 0 && LiveBuffer.probe(direct) != null
+        val format = if (direct != null && rewind > 0) LiveBuffer.probe(direct) else null
+        val buffered = format != null
         val url = when {
             hls != null && rewind > 0 -> LiveTimeshift.wrap(hls, rewind)
             hls != null -> hls
-            buffered -> LiveBuffer.playlistUrl(direct!!, rewind)
+            // Démarrage immédiat sur le flux reçu, enregistré en même temps.
+            buffered -> LiveBuffer.teeUrl(direct!!, rewind)
             else -> direct!!
         }
         val extras = Bundle()
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
+        if (buffered) extras.putString(EXTRA_BUFFER_URL, LiveBuffer.playlistUrl(direct!!, rewind))
         if (hls == null && !buffered) {
             // Flux ordinaire : s'il a été déplacé, le service pourra le retrouver (StreamRepair).
             extras.putString(EXTRA_LIVE_ITEM_ID, item.id)
@@ -208,7 +214,13 @@ object PlaylistBuilder {
             MediaItem.Builder()
                 .setMediaId("${item.id}#$index")
                 .setUri(url)
-                .apply { if (hls != null || buffered) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                .apply {
+                    when {
+                        hls != null -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                        format == "aac" -> setMimeType(MimeTypes.AUDIO_AAC)
+                        format == "mp3" -> setMimeType(MimeTypes.AUDIO_MPEG)
+                    }
+                }
                 .setMediaMetadata(metadata)
                 .build(),
         )

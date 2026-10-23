@@ -197,7 +197,26 @@ class PlaybackService : MediaSessionService() {
             if (uri == null || !LiveBuffer.handles(uri)) LiveBuffer.stop()
         }
 
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Pause sur un direct lu au fil de l'eau : à la reprise, on repart d'où l'on s'était arrêté.
+            val extras = player.currentMediaItem?.mediaMetadata?.extras
+            if (extras?.getString(PlaylistBuilder.EXTRA_BUFFER_URL) == null) {
+                teePausedAt = null
+                return
+            }
+            if (!playWhenReady) {
+                teePausedAt = System.currentTimeMillis()
+            } else {
+                val paused = teePausedAt?.let { System.currentTimeMillis() - it } ?: 0
+                teePausedAt = null
+                if (paused > 2_000) shiftToBuffer(paused)
+            }
+        }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) = applyPendingShift()
+
         override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY) applyPendingShift()
             if (playbackState == Player.STATE_ENDED) stopAndClear()
         }
 
@@ -211,6 +230,43 @@ class PlaybackService : MediaSessionService() {
             if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && tryRepair()) return
             skipAfterError(error)
         }
+    }
+
+    /** Début de la pause d'un direct lu au fil de l'eau. */
+    private var teePausedAt: Long? = null
+
+    /** Retard à appliquer une fois la liste de l'enregistrement chargée. */
+    private var pendingShiftMs: Long? = null
+
+    /**
+     * Direct lu au fil de l'eau → enregistrement : remplace l'élément par la liste locale
+     * et recule de [behindMs] par rapport au direct (au plus jusqu'au début de l'enregistrement).
+     */
+    private fun shiftToBuffer(behindMs: Long) {
+        val index = player.currentMediaItemIndex
+        val item = player.currentMediaItem ?: return
+        val meta = item.mediaMetadata
+        val bufferUrl = meta.extras?.getString(PlaylistBuilder.EXTRA_BUFFER_URL) ?: return
+        val extras = Bundle(meta.extras).apply { remove(PlaylistBuilder.EXTRA_BUFFER_URL) }
+        pendingShiftMs = behindMs
+        player.replaceMediaItem(
+            index,
+            item.buildUpon()
+                .setUri(bufferUrl)
+                .setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+                .setMediaMetadata(meta.buildUpon().setExtras(extras).build())
+                .build(),
+        )
+        player.prepare()
+    }
+
+    private fun applyPendingShift() {
+        val behind = pendingShiftMs ?: return
+        if (!player.isCurrentMediaItemLive || player.currentTimeline.isEmpty) return
+        val window = player.currentTimeline.getWindow(player.currentMediaItemIndex, androidx.media3.common.Timeline.Window())
+        if (window.defaultPositionMs == C.TIME_UNSET) return
+        pendingShiftMs = null
+        player.seekTo((window.defaultPositionMs - behind).coerceAtLeast(0))
     }
 
     /** Directs déjà réparés (ou tentés) depuis le démarrage du service : une seule tentative chacun. */
@@ -276,6 +332,7 @@ class PlaybackService : MediaSessionService() {
             if (controller.packageName != packageName) return super.onConnect(session, controller)
             val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                 .add(SessionCommand(CMD_PLAY_TILE, Bundle.EMPTY))
+                .add(SessionCommand(CMD_LIVE_SHIFT, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(commands)
@@ -288,6 +345,10 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == CMD_LIVE_SHIFT) {
+                shiftToBuffer(args.getLong(KEY_BEHIND_MS, 0L).coerceAtLeast(0))
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (customCommand.customAction != CMD_PLAY_TILE) {
                 return super.onCustomCommand(session, controller, customCommand, args)
             }
@@ -313,6 +374,10 @@ class PlaybackService : MediaSessionService() {
     companion object {
         /** Commande personnalisée : lancer une tuile (JSON dans KEY_TILE_JSON). */
         const val CMD_PLAY_TILE = "com.cgexcel.radioclic.PLAY_TILE"
+
+        /** Commande personnalisée : passer d'un direct au fil de l'eau à son enregistrement, en retard de KEY_BEHIND_MS. */
+        const val CMD_LIVE_SHIFT = "com.cgexcel.radioclic.LIVE_SHIFT"
+        const val KEY_BEHIND_MS = "behindMs"
         const val KEY_TILE_JSON = "tile"
 
         /** Pause au-delà de laquelle l'enregistrement d'un direct est abandonné. */
