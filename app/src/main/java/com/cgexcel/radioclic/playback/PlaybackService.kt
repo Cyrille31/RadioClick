@@ -26,8 +26,10 @@ import com.cgexcel.radioclic.MainActivity
 import com.cgexcel.radioclic.R
 import com.cgexcel.radioclic.data.ConfigJson
 import com.cgexcel.radioclic.data.ConfigRepository
+import com.cgexcel.radioclic.model.PlayItem
 import com.cgexcel.radioclic.model.Tile
 import com.cgexcel.radioclic.net.Http
+import com.cgexcel.radioclic.net.StreamRepair
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -184,17 +186,63 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val title = player.currentMediaItem?.mediaMetadata?.title ?: "élément"
-            val reason = if (error.errorCode in 2000..2999) "réseau ou flux indisponible" else "format non lisible"
-            if (player.hasNextMediaItem()) {
-                AppMessages.show(this@PlaybackService, "« $title » sauté : $reason.")
-                player.seekToNextMediaItem()
-                player.prepare()
-                player.play()
-            } else {
-                AppMessages.show(this@PlaybackService, "« $title » : lecture impossible ($reason).")
-                stopAndClear()
+            if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && tryRepair()) return
+            skipAfterError(error)
+        }
+    }
+
+    /** Directs déjà réparés (ou tentés) depuis le démarrage du service : une seule tentative chacun. */
+    private val repairAttempts = mutableSetOf<String>()
+
+    /**
+     * Flux introuvable : cherche sa nouvelle adresse sur le même serveur. Si elle existe,
+     * relance la lecture et met la tuile à jour. Vrai si une tentative est lancée.
+     */
+    private fun tryRepair(): Boolean {
+        val index = player.currentMediaItemIndex
+        val item = player.currentMediaItem ?: return false
+        val extras = item.mediaMetadata.extras ?: return false
+        val itemId = extras.getString(PlaylistBuilder.EXTRA_LIVE_ITEM_ID) ?: return false
+        val station = extras.getString(PlaylistBuilder.EXTRA_STATION_NAME) ?: return false
+        val oldUrl = item.localConfiguration?.uri?.toString() ?: return false
+        if (!repairAttempts.add(itemId)) return false
+        scope.launch {
+            val newUrl = runCatching { StreamRepair.findMoved(oldUrl, station) }.getOrNull()
+            if (newUrl == null || player.currentMediaItem?.mediaId != item.mediaId) {
+                if (player.currentMediaItem?.mediaId == item.mediaId) skipAfterError(null)
+                return@launch
             }
+            player.replaceMediaItem(index, item.buildUpon().setUri(newUrl).build())
+            player.prepare()
+            player.play()
+            ConfigRepository.get(this@PlaybackService).update { config ->
+                config.copy(
+                    tiles = config.tiles.map { tile ->
+                        tile.copy(
+                            items = tile.items.map {
+                                if (it is PlayItem.Live && it.id == itemId) it.copy(streamUrl = newUrl) else it
+                            },
+                        )
+                    },
+                )
+            }
+            AppMessages.show(this@PlaybackService, "« $station » a changé d'adresse : tuile mise à jour.")
+        }
+        return true
+    }
+
+    /** Élément illisible : passe au suivant, ou arrête s'il n'y en a pas. */
+    private fun skipAfterError(error: PlaybackException?) {
+        val title = player.currentMediaItem?.mediaMetadata?.title ?: "élément"
+        val reason = if (error == null || error.errorCode in 2000..2999) "réseau ou flux indisponible" else "format non lisible"
+        if (player.hasNextMediaItem()) {
+            AppMessages.show(this, "« $title » sauté : $reason.")
+            player.seekToNextMediaItem()
+            player.prepare()
+            player.play()
+        } else {
+            AppMessages.show(this, "« $title » : lecture impossible ($reason).")
+            stopAndClear()
         }
     }
 

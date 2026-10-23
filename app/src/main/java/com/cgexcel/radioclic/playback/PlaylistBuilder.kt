@@ -33,6 +33,10 @@ object PlaylistBuilder {
     /** Clé des extras de métadonnées : durée maximale (ms) d'un direct. */
     const val EXTRA_MAX_DURATION_MS = "radioclic.maxDurationMs"
 
+    /** Clés des extras d'un direct réparable : identifiant de l'élément et nom de la station. */
+    const val EXTRA_LIVE_ITEM_ID = "radioclic.liveItemId"
+    const val EXTRA_STATION_NAME = "radioclic.stationName"
+
     class Result(val mediaItems: List<MediaItem>, val messages: List<String>)
 
     private sealed class Resolved {
@@ -155,6 +159,11 @@ object PlaylistBuilder {
         }
         val extras = Bundle()
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
+        if (hls == null) {
+            // Flux ordinaire : s'il a été déplacé, le service pourra le retrouver (StreamRepair).
+            extras.putString(EXTRA_LIVE_ITEM_ID, item.id)
+            extras.putString(EXTRA_STATION_NAME, label)
+        }
         val metadata = MediaMetadata.Builder()
             .setTitle(label)
             .setArtist("En direct")
