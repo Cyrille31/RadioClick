@@ -167,13 +167,14 @@ private fun TimeBar(state: PlayerUiState, player: PlayerConnection) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (state.isLive) {
-            val behind = (duration - shown).toLong()
+            // Pendant un glissement : écart estimé ; sinon, le retard choisi (−15 s, −30 s…).
+            val behind = dragging?.let { (duration - it).toLong() } ?: state.liveBehindMs
             Text(
-                if (behind < 10_000) "En direct" else "Direct −${formatTime(behind)}",
+                if (behind < 1_000) "En direct" else "Direct −${formatTime(behind)}",
                 style = tabular,
                 modifier = Modifier.weight(1f),
             )
-            if (behind >= 10_000) {
+            if (behind >= 1_000) {
                 AssistChip(onClick = player::goLive, label = { Text("Revenir au direct") })
             }
         } else {

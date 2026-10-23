@@ -75,9 +75,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var lastTileId by mutableStateOf<String?>(null)
         private set
 
-    fun play(tile: Tile) {
+    /** Lance une tuile ; [day] : jour choisi dans le planning (null : le plus récent). */
+    fun play(tile: Tile, day: java.time.LocalDate? = null) {
         lastTileId = tile.id
-        player.playTile(tile)
+        player.playTile(tile, day)
     }
 
     // --- Disposition --------------------------------------------------------

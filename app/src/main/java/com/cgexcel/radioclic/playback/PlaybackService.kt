@@ -119,7 +119,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     /** Lance une tuile : remplace l'enchaînement en cours. */
-    private suspend fun playTile(tile: Tile) {
+    private suspend fun playTile(tile: Tile, day: java.time.LocalDate? = null) {
         val name = tile.title.ifBlank { "la tuile" }
         if (tile.items.isEmpty()) {
             AppMessages.show(this, "« $name » ne contient aucun élément à lire.")
@@ -135,6 +135,7 @@ class PlaybackService : MediaSessionService() {
         val options = PlaylistBuilder.Options(
             skipAds = config?.skipAds ?: true,
             liveRewindMinutes = config?.liveRewindMinutes ?: 15,
+            day = day,
         )
         val result = PlaylistBuilder.build(tile, options)
         if (result.messages.isNotEmpty()) {
@@ -272,12 +273,14 @@ class PlaybackService : MediaSessionService() {
             val tile = args.getString(KEY_TILE_JSON)?.let {
                 runCatching { ConfigJson.decodeFromString(Tile.serializer(), it) }.getOrNull()
             } ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+            val day = args.getLong(KEY_EPOCH_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }
+                ?.let(java.time.LocalDate::ofEpochDay)
 
             val done = SettableFuture.create<SessionResult>()
             loadJob?.cancel()
             loadJob = scope.launch {
                 try {
-                    playTile(tile)
+                    playTile(tile, day)
                 } finally {
                     done.set(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
@@ -290,5 +293,8 @@ class PlaybackService : MediaSessionService() {
         /** Commande personnalisée : lancer une tuile (JSON dans KEY_TILE_JSON). */
         const val CMD_PLAY_TILE = "com.cgexcel.radioclic.PLAY_TILE"
         const val KEY_TILE_JSON = "tile"
+
+        /** Jour choisi dans le planning (LocalDate.toEpochDay), facultatif. */
+        const val KEY_EPOCH_DAY = "epochDay"
     }
 }
