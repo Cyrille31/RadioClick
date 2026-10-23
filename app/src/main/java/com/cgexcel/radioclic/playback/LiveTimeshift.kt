@@ -173,6 +173,7 @@ object LiveTimeshift {
         override fun open(dataSpec: DataSpec): Long {
             uri = dataSpec.uri
             if (dataSpec.uri.scheme == REPLAY_SCHEME) return openReplay(dataSpec)
+            if (LiveBuffer.handles(dataSpec.uri)) return openBytes(LiveBuffer.open(dataSpec.uri), dataSpec)
             if (dataSpec.uri.scheme != SCHEME) {
                 delegating = true
                 return upstream.open(dataSpec)
@@ -189,6 +190,13 @@ object LiveTimeshift {
                 response.body?.string() ?: throw IOException("Réponse vide")
             }
             val bytes = extend(text, real, minutes * 60).toByteArray(Charsets.UTF_8)
+            data = bytes
+            position = min(dataSpec.position.toInt(), bytes.size)
+            return (bytes.size - position).toLong()
+        }
+
+        private fun openBytes(bytes: ByteArray, dataSpec: DataSpec): Long {
+            delegating = false
             data = bytes
             position = min(dataSpec.position.toInt(), bytes.size)
             return (bytes.size - position).toLong()

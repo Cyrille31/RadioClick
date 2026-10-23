@@ -17,7 +17,7 @@ data class AppConfig(
     val skipAds: Boolean = true,
     /** Saut avant / arrière des boutons du lecteur, en secondes. */
     val seekSeconds: Int = 15,
-    /** Retour possible dans le passé pendant un direct Radio France, en minutes (0 : désactivé). */
+    /** Retour possible dans le passé pendant un direct (enregistrement local hors Radio France), en minutes (0 : désactivé). */
     val liveRewindMinutes: Int = 15,
     val tiles: List<Tile> = emptyList(),
 ) {
