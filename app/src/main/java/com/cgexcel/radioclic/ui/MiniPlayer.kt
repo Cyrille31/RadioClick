@@ -107,8 +107,18 @@ fun MiniPlayer(state: PlayerUiState, player: PlayerConnection, seekSeconds: Int)
                 }
             }
 
-            val canSeek = state.isSeekable && state.durationMs > 0
-            if (canSeek) TimeBar(state, player)
+            val canSeek = (state.isSeekable && state.durationMs > 0) || state.canShiftLive
+            if (state.canShiftLive) {
+                // Direct au fil de l'eau : pas encore de barre de temps, seulement l'état du direct.
+                val behind = state.liveBehindMs
+                Text(
+                    if (behind < 1_000) "En direct" else "Direct −${formatTime(behind)}",
+                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                )
+            } else if (canSeek) {
+                TimeBar(state, player)
+            }
 
             Row(
                 Modifier.fillMaxWidth(),

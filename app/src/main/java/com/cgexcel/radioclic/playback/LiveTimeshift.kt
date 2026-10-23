@@ -166,6 +166,7 @@ object LiveTimeshift {
         private var position = 0
         private var uri: Uri? = null
         private var delegating = false
+        private var tee: LiveBuffer.Tee? = null
 
         override fun addTransferListener(transferListener: TransferListener) =
             upstream.addTransferListener(transferListener)
@@ -173,6 +174,12 @@ object LiveTimeshift {
         override fun open(dataSpec: DataSpec): Long {
             uri = dataSpec.uri
             if (dataSpec.uri.scheme == REPLAY_SCHEME) return openReplay(dataSpec)
+            if (LiveBuffer.isTee(dataSpec.uri)) {
+                // Direct ordinaire lu au fil de l'eau : longueur inconnue.
+                delegating = false
+                tee = LiveBuffer.openTee(dataSpec.uri)
+                return C.LENGTH_UNSET.toLong()
+            }
             if (LiveBuffer.handles(dataSpec.uri)) return openBytes(LiveBuffer.open(dataSpec.uri), dataSpec)
             if (dataSpec.uri.scheme != SCHEME) {
                 delegating = true
@@ -221,6 +228,7 @@ object LiveTimeshift {
 
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             if (delegating) return upstream.read(buffer, offset, length)
+            tee?.let { t -> return t.read(buffer, offset, length).let { if (it < 0) C.RESULT_END_OF_INPUT else it } }
             val bytes = data ?: return C.RESULT_END_OF_INPUT
             if (length == 0) return 0
             if (position >= bytes.size) return C.RESULT_END_OF_INPUT
@@ -237,6 +245,8 @@ object LiveTimeshift {
 
         override fun close() {
             if (delegating) upstream.close()
+            tee?.close()
+            tee = null
             delegating = false
             data = null
         }
