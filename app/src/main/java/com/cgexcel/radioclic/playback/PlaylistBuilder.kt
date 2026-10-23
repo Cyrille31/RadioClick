@@ -46,7 +46,21 @@ object PlaylistBuilder {
 
     /** Résout tous les éléments en parallèle, puis les garde dans l'ordre. */
     /** Réglages de lecture utiles à la construction. */
-    data class Options(val skipAds: Boolean = true, val liveRewindMinutes: Int = 0)
+    data class Options(
+        val skipAds: Boolean = true,
+        val liveRewindMinutes: Int = 0,
+        /** Jour choisi dans le planning ; null : le plus récent (comportement habituel). */
+        val day: LocalDate? = null,
+    )
+
+    /** Clé des extras : élément repris dans le direct (créneau passé, pas un vrai direct). */
+    const val EXTRA_REPLAY = "radioclic.replay"
+
+    private val paris: ZoneId = ZoneId.of("Europe/Paris")
+
+    /** Jour demandé s'il n'est pas aujourd'hui (heure de Paris), sinon null. */
+    private fun pastDay(options: Options): LocalDate? =
+        options.day?.takeIf { it != LocalDate.now(paris) }
 
     suspend fun build(tile: Tile, options: Options = Options()): Result = coroutineScope {
         val resolved = tile.items.mapIndexed { index, item ->
@@ -62,8 +76,10 @@ object PlaylistBuilder {
         val label = item.title.ifBlank { "Élément ${index + 1}" }
         return try {
             when (item) {
-                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, options.skipAds)
-                is PlayItem.Live -> resolveLive(tile, item, label, index, options)
+                is PlayItem.Podcast -> resolvePodcast(tile, item, label, index, options)
+                is PlayItem.Live -> pastDay(options)
+                    ?.let { Resolved.Skipped("« $label » : direct ignoré pour un autre jour") }
+                    ?: resolveLive(tile, item, label, index, options)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -77,17 +93,25 @@ object PlaylistBuilder {
         item: PlayItem.Podcast,
         label: String,
         index: Int,
-        skipAds: Boolean,
+        options: Options,
     ): Resolved {
+        val skipAds = options.skipAds
         if (!item.hasSource) return Resolved.Skipped("« $label » sauté : émission non choisie")
         val feed = FeedResolver.fetchWithCompanions(item.feedUrl, item.appleId)
-        val episode = feed.episodes.firstOrNull()
-            ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
+        val past = pastDay(options)
+        val episode = if (past != null) {
+            // Planning : l'épisode paru ce jour-là (le dernier du jour s'il y en a plusieurs).
+            feed.episodes.firstOrNull { e -> e.pubDate?.let { Instant.ofEpochMilli(it).atZone(paris).toLocalDate() } == past }
+                ?: return Resolved.Skipped("« $label » : pas d'épisode le ${dayFormat.format(past)}")
+        } else {
+            feed.episodes.firstOrNull()
+                ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
+        }
         // Épisode du jour pas encore en ligne, mais émission déjà diffusée : reprise dans le direct.
-        BroadcastReplay.plan(feed)?.let { plan ->
+        if (past == null) BroadcastReplay.plan(feed)?.let { plan ->
             return Resolved.Ok(replayItem(tile, item, label, index, plan, item.imageUrl ?: feed.imageUrl))
         }
-        if (item.onlyToday && !isToday(episode.pubDate)) {
+        if (past == null && item.onlyToday && !isToday(episode.pubDate)) {
             return Resolved.Skipped("« $label » pas encore en ligne")
         }
         // La date et l'heure de l'épisode sont toujours affichées, quand le flux les donne.
@@ -125,6 +149,7 @@ object PlaylistBuilder {
             .setArtworkUri(image?.let(Uri::parse))
             .setIsPlayable(true)
             .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
+            .setExtras(Bundle().apply { putBoolean(EXTRA_REPLAY, true) })
             .build()
         return MediaItem.Builder()
             .setMediaId("${item.id}#$index")
@@ -135,6 +160,8 @@ object PlaylistBuilder {
     }
 
     private val timeFormat = DateTimeFormatter.ofPattern("HH'h'mm", Locale.FRENCH)
+
+    private val dayFormat = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRENCH)
 
     private suspend fun resolveLive(
         tile: Tile,

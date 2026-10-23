@@ -3,6 +3,18 @@
  */
 package com.cgexcel.radioclic.ui
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import com.cgexcel.radioclic.model.PlayItem
+import com.cgexcel.radioclic.model.Tile
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,6 +126,7 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
         var tiles by remember { mutableStateOf(config.tiles) }
         LaunchedEffect(config.tiles) { tiles = config.tiles }
         var menuTileId by remember { mutableStateOf<String?>(null) }
+        var planningTile by remember { mutableStateOf<Tile?>(null) }
         var movedDuringDrag by remember { mutableStateOf(false) }
         val haptic = LocalHapticFeedback.current
         val gridState = rememberLazyGridState()
@@ -125,6 +138,17 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
                 tiles = tiles.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             }
+        }
+
+        planningTile?.let { tile ->
+            PlanningDialog(
+                tile = tile,
+                onDismiss = { planningTile = null },
+                onPick = { day ->
+                    planningTile = null
+                    vm.play(tile, day)
+                },
+            )
         }
 
         LazyVerticalGrid(
@@ -172,6 +196,16 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
                                     },
                                 )
                             }
+                            if (tile.items.any { it is PlayItem.Podcast }) {
+                                DropdownMenuItem(
+                                    text = { Text("Écouter un autre jour…") },
+                                    leadingIcon = { Icon(Icons.Filled.CalendarMonth, null) },
+                                    onClick = {
+                                        menuTileId = null
+                                        planningTile = tile
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Modifier") },
                                 leadingIcon = { Icon(Icons.Filled.Edit, null) },
@@ -187,4 +221,31 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
             }
         }
     }
+}
+
+/** Planning : les 14 derniers jours ; la tuile est lue avec l'épisode paru le jour choisi. */
+@Composable
+private fun PlanningDialog(tile: Tile, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
+    val today = LocalDate.now(ZoneId.of("Europe/Paris"))
+    val format = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRENCH)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tile.title.ifBlank { "Planning" }) },
+        text = {
+            LazyColumn {
+                items((0L until 14L).map { today.minusDays(it) }) { day ->
+                    val label = when (day) {
+                        today -> "Aujourd'hui"
+                        today.minusDays(1) -> "Hier"
+                        else -> format.format(day).replaceFirstChar { it.uppercase() }
+                    }
+                    TextButton(onClick = { onPick(day) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(label, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
 }
