@@ -57,6 +57,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Efface un éventuel enregistrement laissé par un arrêt brutal.
+        LiveBuffer.init(cacheDir)
 
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(Http.USER_AGENT)
@@ -109,6 +111,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        LiveBuffer.stop()
         scope.cancel()
         session?.run {
             player.release()
@@ -156,13 +159,22 @@ class PlaybackService : MediaSessionService() {
     private fun stopAndClear() {
         player.stop()
         player.clearMediaItems()
+        LiveBuffer.stop()
     }
 
     /** Passe à l'élément suivant quand un direct a atteint sa durée maximale. */
     private fun startDurationWatcher() {
         scope.launch {
+            var pausedMs = 0L
             while (isActive) {
                 delay(1_000)
+                // Pause prolongée : l'enregistrement d'un direct est arrêté et ses fichiers supprimés
+                // (il reprend au direct à la relecture).
+                pausedMs = if (player.playWhenReady || !LiveBuffer.isRecording) 0 else pausedMs + 1_000
+                if (pausedMs > MAX_BUFFER_PAUSE_MS) {
+                    LiveBuffer.stop()
+                    pausedMs = 0
+                }
                 val maxMs = player.currentMediaItem?.maxDurationMs() ?: continue
                 if (!player.isPlaying) continue
                 elapsedOnItemMs += 1_000
@@ -180,6 +192,9 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             elapsedOnItemMs = 0
+            // L'enregistrement ne sert qu'au direct en cours : libéré dès qu'on passe à autre chose.
+            val uri = mediaItem?.localConfiguration?.uri
+            if (uri == null || !LiveBuffer.handles(uri)) LiveBuffer.stop()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -187,6 +202,12 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            // Trop longtemps en arrière (pause plus longue que l'enregistrement) : retour au direct.
+            if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                player.seekToDefaultPosition()
+                player.prepare()
+                return
+            }
             if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS && tryRepair()) return
             skipAfterError(error)
         }
@@ -293,6 +314,9 @@ class PlaybackService : MediaSessionService() {
         /** Commande personnalisée : lancer une tuile (JSON dans KEY_TILE_JSON). */
         const val CMD_PLAY_TILE = "com.cgexcel.radioclic.PLAY_TILE"
         const val KEY_TILE_JSON = "tile"
+
+        /** Pause au-delà de laquelle l'enregistrement d'un direct est abandonné. */
+        private const val MAX_BUFFER_PAUSE_MS = 30L * 60 * 1000
 
         /** Jour choisi dans le planning (LocalDate.toEpochDay), facultatif. */
         const val KEY_EPOCH_DAY = "epochDay"

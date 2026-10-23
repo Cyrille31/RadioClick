@@ -179,14 +179,18 @@ object PlaylistBuilder {
             options.skipAds || rewind > 0 -> AdFree.resolveLive(original).takeIf { it != original }
             else -> null
         }
+        val direct = if (hls == null) resolveStreamPlaylist(original) else null
+        // Autres radios : flux MP3 / AAC enregistré pendant l'écoute pour pouvoir reculer.
+        val buffered = direct != null && rewind > 0 && LiveBuffer.probe(direct) != null
         val url = when {
             hls != null && rewind > 0 -> LiveTimeshift.wrap(hls, rewind)
             hls != null -> hls
-            else -> resolveStreamPlaylist(original)
+            buffered -> LiveBuffer.playlistUrl(direct!!, rewind)
+            else -> direct!!
         }
         val extras = Bundle()
         item.maxMinutes?.takeIf { it > 0 }?.let { extras.putLong(EXTRA_MAX_DURATION_MS, it * 60_000L) }
-        if (hls == null) {
+        if (hls == null && !buffered) {
             // Flux ordinaire : s'il a été déplacé, le service pourra le retrouver (StreamRepair).
             extras.putString(EXTRA_LIVE_ITEM_ID, item.id)
             extras.putString(EXTRA_STATION_NAME, label)
@@ -204,7 +208,7 @@ object PlaylistBuilder {
             MediaItem.Builder()
                 .setMediaId("${item.id}#$index")
                 .setUri(url)
-                .apply { if (hls != null) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                .apply { if (hls != null || buffered) setMimeType(MimeTypes.APPLICATION_M3U8) }
                 .setMediaMetadata(metadata)
                 .build(),
         )
