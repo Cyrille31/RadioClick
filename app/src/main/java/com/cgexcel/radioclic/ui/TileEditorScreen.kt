@@ -58,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -182,7 +183,12 @@ fun TileEditorScreen(vm: AppViewModel, snackbar: SnackbarHostState) {
             }
             item(key = "image") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TileCard(tile = tile.copy(title = tile.title.ifBlank { "Aperçu" }), columns = 2, modifier = Modifier.width(132.dp))
+                    TileCard(
+                        tile = tile.copy(title = tile.title.ifBlank { "Aperçu" }),
+                        columns = 2,
+                        round = vm.config.collectAsState().value?.roundTiles == true,
+                        modifier = Modifier.width(132.dp),
+                    )
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Image", style = MaterialTheme.typography.titleSmall)

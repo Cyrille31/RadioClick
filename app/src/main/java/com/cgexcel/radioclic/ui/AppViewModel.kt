@@ -182,6 +182,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSkipAds(skip: Boolean) = repository.update { it.copy(skipAds = skip) }
 
+    fun setRoundTiles(round: Boolean) = repository.update { it.copy(roundTiles = round) }
+
     fun setColumns(columns: Int) = repository.update { it.copy(columns = columns.coerceIn(1, 4)) }
 
     /** Enregistre un nouvel ordre des tuiles (glisser-déposer). */

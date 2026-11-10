@@ -191,6 +191,15 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                                 .padding(top = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            Text("Tuiles rondes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Switch(checked = config.roundTiles, onCheckedChange = vm::setRoundTiles)
+                        }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Column(Modifier.weight(1f)) {
                                 Text("Sans publicité", style = MaterialTheme.typography.titleSmall)
                                 Text(
@@ -260,6 +269,7 @@ fun SettingsScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostSt
                         TileCard(
                             tile = tile,
                             columns = config.columns.coerceAtMost(2),
+                            round = config.roundTiles,
                             modifier = Modifier
                                 .longPressDraggableHandle()
                                 .scale(if (isDragging) 1.05f else 1f),

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
@@ -42,7 +43,8 @@ import com.cgexcel.radioclic.model.Tile
 
 /**
  * Tuile de la grille : couleur, image optionnelle (pochette par défaut) et titre.
- * En une colonne, la tuile est horizontale ; sinon carrée.
+ * En une colonne, la tuile est horizontale ; sinon carrée. [round] : tuile ronde
+ * (pilule en une colonne), contenu recentré pour rester dans le cercle.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,6 +55,7 @@ fun TileCard(
     playing: Boolean = false,
     onClick: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    round: Boolean = false,
     footer: (@Composable () -> Unit)? = null,
 ) {
     val background = Color(tile.color)
@@ -63,9 +66,18 @@ fun TileCard(
     } else {
         Modifier
     }
+    val imageShape = if (round) CircleShape else RoundedCornerShape(12.dp)
+    // Rond : la barre d'édition (paramétrage) passe sous le cercle au lieu d'y être coupée.
+    if (round && footer != null) {
+        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            TileCard(tile, columns, Modifier, playing, onClick, onLongClick, round = true, footer = null)
+            footer()
+        }
+        return
+    }
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = if (round) CircleShape else RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = background, contentColor = content),
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
     ) {
@@ -75,7 +87,7 @@ fun TileCard(
                     Modifier
                         .fillMaxWidth()
                         .height(104.dp)
-                        .padding(12.dp),
+                        .padding(horizontal = if (round) 24.dp else 12.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (image != null) {
@@ -86,7 +98,7 @@ fun TileCard(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(12.dp)),
+                                .clip(imageShape),
                         )
                         Spacer(Modifier.width(16.dp))
                     }
@@ -111,9 +123,11 @@ fun TileCard(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .padding(if (columns >= 4) 6.dp else 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Column(
-                        Modifier.fillMaxSize(),
+                        // Rond : contenu dans le carré inscrit dans le cercle (≈ 72 % du diamètre).
+                        if (round) Modifier.fillMaxSize(0.76f) else Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -125,7 +139,7 @@ fun TileCard(
                                 modifier = Modifier
                                     .weight(1f, fill = false)
                                     .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(12.dp)),
+                                    .clip(imageShape),
                             )
                             Spacer(Modifier.height(6.dp))
                         }
@@ -140,7 +154,7 @@ fun TileCard(
                         )
                     }
                     if (playing) {
-                        Box(Modifier.align(Alignment.TopEnd)) { PlayingIcon() }
+                        Box(Modifier.align(if (round) Alignment.TopCenter else Alignment.TopEnd)) { PlayingIcon() }
                     }
                 }
             }
