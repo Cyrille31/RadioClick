@@ -167,6 +167,7 @@ fun HomeScreen(vm: AppViewModel, config: AppConfig, snackbar: SnackbarHostState)
                         TileCard(
                             tile = tile,
                             columns = config.columns,
+                            round = config.roundTiles,
                             playing = playerState.hasMedia && vm.lastTileId == tile.id,
                             onClick = { vm.play(tile) },
                             modifier = Modifier
