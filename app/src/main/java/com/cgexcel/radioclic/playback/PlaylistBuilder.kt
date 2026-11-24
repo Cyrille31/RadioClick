@@ -43,7 +43,8 @@ object PlaylistBuilder {
     class Result(val mediaItems: List<MediaItem>, val messages: List<String>)
 
     private sealed class Resolved {
-        class Ok(val item: MediaItem) : Resolved()
+        /** [note] : message facultatif à afficher bien que l'élément soit lu. */
+        class Ok(val item: MediaItem, val note: String? = null) : Resolved()
         class Skipped(val message: String) : Resolved()
     }
 
@@ -71,7 +72,12 @@ object PlaylistBuilder {
         }.awaitAll()
         Result(
             mediaItems = resolved.filterIsInstance<Resolved.Ok>().map { it.item },
-            messages = resolved.filterIsInstance<Resolved.Skipped>().map { it.message },
+            messages = resolved.mapNotNull {
+                when (it) {
+                    is Resolved.Skipped -> it.message
+                    is Resolved.Ok -> it.note
+                }
+            },
         )
     }
 
@@ -111,8 +117,26 @@ object PlaylistBuilder {
                 ?: return Resolved.Skipped("« $label » sauté : aucun épisode dans le flux")
         }
         // Épisode du jour pas encore en ligne, mais émission déjà diffusée : reprise dans le direct.
-        if (past == null) BroadcastReplay.plan(feed)?.let { plan ->
-            return Resolved.Ok(replayItem(tile, item, label, index, plan, item.imageUrl ?: feed.imageUrl))
+        var note: String? = null
+        if (past == null) {
+            // Station de l'émission : d'après le flux, sinon d'après l'annuaire Apple.
+            val hint = if (BroadcastReplay.stationFor(feed.author) == null) item.appleId?.let { FeedResolver.authorFor(it) } else null
+            val older = episode.pubDate?.let { "l'épisode du ${shortDate(it)}" } ?: "le dernier épisode"
+            when (val decision = BroadcastReplay.decide(feed, stationHint = hint)) {
+                is BroadcastReplay.Decision.Replay ->
+                    return Resolved.Ok(replayItem(tile, item, label, index, decision.plan, item.imageUrl ?: feed.imageUrl))
+                is BroadcastReplay.Decision.NotYetAired -> {
+                    val at = timeFormat.format(Instant.ofEpochSecond(decision.startSec).atZone(ZoneId.systemDefault()))
+                    if (item.onlyToday) return Resolved.Skipped("« $label » : pas encore diffusé aujourd'hui ($at)")
+                    note = "« $label » d'aujourd'hui pas encore diffusé ($at) : lecture de $older."
+                }
+                is BroadcastReplay.Decision.Impossible -> {
+                    if (item.onlyToday) return Resolved.Skipped("« $label » pas encore en ligne (${decision.reason})")
+                    note = "« $label » d'aujourd'hui pas encore en ligne, reprise du direct impossible " +
+                        "(${decision.reason}) : lecture de $older."
+                }
+                BroadcastReplay.Decision.NotNeeded -> Unit
+            }
         }
         if (past == null && item.onlyToday && !isToday(episode.pubDate)) {
             return Resolved.Skipped("« $label » pas encore en ligne")
@@ -133,6 +157,7 @@ object PlaylistBuilder {
                 .setUri(if (skipAds) AdFree.resolve(episode.audioUrl) else episode.audioUrl)
                 .setMediaMetadata(metadata)
                 .build(),
+            note,
         )
     }
 

@@ -69,6 +69,7 @@ object ApplePodcasts {
                         audioUrl = audio,
                         pubDate = RssParser.parseDate(date),
                         imageUrl = element.artwork("episodeArtwork") ?: element.artwork("artwork"),
+                        durationSec = element.durationSec(),
                     )
                 }
                 element.values.forEach { collect(it, out) }
@@ -86,6 +87,14 @@ object ApplePodcasts {
             (enclosure as? JsonObject)?.string("streamUrl")?.let { return it }
         }
         return null
+    }
+
+    /** Durée de l'épisode (secondes), indiquée avec son lien audio. */
+    private fun JsonObject.durationSec(): Int? {
+        val enclosures = listOfNotNull(this["currentMediaEnclosure"] as? JsonObject) +
+            (this["mediaEnclosures"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+        return enclosures.firstNotNullOfOrNull { (it["duration"] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull() }
+            ?.toInt()?.takeIf { it > 0 }
     }
 
     private fun JsonObject.artwork(key: String): String? =
@@ -174,6 +183,23 @@ object FeedResolver {
     }
 
     private const val COMPANIONS_MAX_AGE_MS = 7L * 24 * 3600 * 1000
+
+    /**
+     * Éditeur d'une émission d'après l'annuaire Apple (« France Inter »), mémorisé.
+     * Sert quand le flux lu ne l'indique pas (fiche Apple), pour reprendre l'émission dans le direct.
+     */
+    suspend fun authorFor(appleId: Long): String? {
+        val key = "author_$appleId"
+        store?.getString(key, null)?.let { return it }
+        return try {
+            PodcastSearch.lookup(appleId)?.artistName?.takeIf { it.isNotBlank() }
+                ?.also { store?.edit()?.putString(key, it)?.apply() }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     /** Identifiants Apple des podcasts jumeaux (mémorisés une semaine). */
     private suspend fun companions(appleId: Long): List<Long> {

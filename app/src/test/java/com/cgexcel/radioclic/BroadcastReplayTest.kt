@@ -82,8 +82,9 @@ class BroadcastReplayTest {
         assertNull(BroadcastReplay.plan(journal, at("2026-10-12T09:00:00+02:00")))
         // Station inconnue.
         assertNull(BroadcastReplay.plan(journal.copy(author = "Radio Classique"), at("2026-10-13T08:10:00+02:00")))
-        // Horaire instable.
+        // Horaire instable, et aucune heure dans le nom de l'émission.
         val shifted = journal.copy(
+            title = "Le grand entretien",
             episodes = journal.episodes.mapIndexed { i, e -> e.copy(pubDate = e.pubDate!! + i * 3_600_000L) },
         )
         assertNull(BroadcastReplay.plan(shifted, at("2026-10-13T08:10:00+02:00")))
@@ -92,6 +93,56 @@ class BroadcastReplayTest {
             Instant.ofEpochMilli(e.pubDate!!).atZone(java.time.ZoneId.of("Europe/Paris")).dayOfWeek.value <= 5
         })
         assertNull(BroadcastReplay.plan(weekdays, at("2026-10-17T08:30:00+02:00")))
+    }
+
+    @Test
+    fun slotIsReadFromTheShowName() {
+        assertEquals(8 * 3600, BroadcastReplay.slotFromTitle("Journal de 08h00"))
+        assertEquals(13 * 3600, BroadcastReplay.slotFromTitle("Le journal de 13h du week-end"))
+        assertEquals(7 * 3600 + 30 * 60, BroadcastReplay.slotFromTitle("Le 7h30"))
+        assertNull(BroadcastReplay.slotFromTitle("Les 24h de l'info"))
+        assertNull(BroadcastReplay.slotFromTitle("La revue de presse"))
+    }
+
+    @Test
+    fun delayedPublicationStillReplaysFromTheAirTime() {
+        // Mardi 24 novembre à 8h10 : épisodes mis en ligne avec 15 à 40 min de retard.
+        val delays = listOf(22, 15, 38, 40, 18, 25, 31)
+        val feed = journal.copy(
+            episodes = (17..23).reversed().mapIndexed { i, day ->
+                Episode(
+                    title = "Le journal de 08h00 du $day novembre",
+                    audioUrl = "https://a/$day.mp3",
+                    pubDate = at("2026-11-%02dT08:%02d:00+01:00".format(day, delays[i])).toEpochMilli(),
+                    imageUrl = null,
+                    durationSec = 18 * 60,
+                )
+            },
+        )
+        val plan = BroadcastReplay.plan(feed, at("2026-11-24T08:10:00+01:00"))!!
+        assertEquals("franceinter", plan.station)
+        assertEquals(at("2026-11-24T08:00:00+01:00").epochSecond, plan.startSec)
+    }
+
+    @Test
+    fun appleFeedWithoutAuthorNorDurations() {
+        // Fiche Apple : ni éditeur ni durées dans le flux ; l'éditeur vient de l'annuaire.
+        val apple = journal.copy(author = null, episodes = journal.episodes.map { it.copy(durationSec = null) })
+        val now = at("2026-10-13T08:10:00+02:00")
+        assertNull(BroadcastReplay.plan(apple, now))
+        assertEquals(BroadcastReplay.Decision.NotNeeded, BroadcastReplay.decide(apple, now))
+        val plan = BroadcastReplay.plan(apple, now, stationHint = "France Inter")!!
+        assertEquals("franceinter", plan.station)
+        assertEquals(plan.startSec + 30 * 60 + 20, plan.endSec)
+    }
+
+    @Test
+    fun beforeTheAirTimeTheReasonIsKnown() {
+        val decision = BroadcastReplay.decide(journal, at("2026-10-13T07:30:00+02:00"))
+        assertEquals(
+            BroadcastReplay.Decision.NotYetAired(at("2026-10-13T08:00:01+02:00").epochSecond),
+            decision,
+        )
     }
 
     private val live = """
